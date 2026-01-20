@@ -1,13 +1,11 @@
-package main
+package handlers
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +13,11 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"patrn.ink/internal/config"
+	"patrn.ink/internal/logger"
+	"patrn.ink/internal/models"
+	"patrn.ink/internal/storage"
 )
 
 var googleOAuthConfig *oauth2.Config
@@ -22,9 +25,9 @@ var googleOAuthConfig *oauth2.Config
 // InitOAuth initializes Google OAuth configuration
 func InitOAuth() {
 	googleOAuthConfig = &oauth2.Config{
-		ClientID:     AppConfig.GoogleClientID,
-		ClientSecret: AppConfig.GoogleClientSecret,
-		RedirectURL:  AppConfig.GoogleRedirectURL,
+		ClientID:     config.AppConfig.GoogleClientID,
+		ClientSecret: config.AppConfig.GoogleClientSecret,
+		RedirectURL:  config.AppConfig.GoogleRedirectURL,
 		Scopes: []string{
 			"https://www.googleapis.com/auth/userinfo.email",
 			"https://www.googleapis.com/auth/userinfo.profile",
@@ -59,7 +62,7 @@ func GoogleCallbackHandler(c *gin.Context) {
 	code := c.Query("code")
 	token, err := googleOAuthConfig.Exchange(context.Background(), code)
 	if err != nil {
-		Logger.Error("Failed to exchange code for token", zap.Error(err))
+		logger.Logger.Error("Failed to exchange code for token", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to authenticate"})
 		return
 	}
@@ -67,13 +70,13 @@ func GoogleCallbackHandler(c *gin.Context) {
 	// Get user info from Google
 	userInfo, err := getUserInfo(token.AccessToken)
 	if err != nil {
-		Logger.Error("Failed to get user info", zap.Error(err))
+		logger.Logger.Error("Failed to get user info", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
 		return
 	}
 
 	// Create or update user in database
-	user := &User{
+	user := &models.User{
 		ID:        userInfo["id"].(string),
 		Email:     userInfo["email"].(string),
 		Name:      userInfo["name"].(string),
@@ -81,14 +84,14 @@ func GoogleCallbackHandler(c *gin.Context) {
 		CreatedAt: time.Now(),
 	}
 
-	if err := SaveUser(user); err != nil {
-		Logger.Error("Failed to save user", zap.Error(err))
+	if err := storage.SaveUser(user); err != nil {
+		logger.Logger.Error("Failed to save user", zap.Error(err))
 	}
 
 	// Generate JWT token
 	jwtToken, err := generateJWT(user.ID, user.Email)
 	if err != nil {
-		Logger.Error("Failed to generate JWT", zap.Error(err))
+		logger.Logger.Error("Failed to generate JWT", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
@@ -121,54 +124,17 @@ func generateJWT(userID, email string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"email":   email,
-		"exp":     time.Now().Add(AppConfig.JWTExpiration).Unix(),
+		"exp":     time.Now().Add(config.AppConfig.JWTExpiration).Unix(),
 		"iat":     time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(AppConfig.JWTSecret))
-}
-
-// AuthMiddleware validates JWT token
-func AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Authorization header required"})
-			return
-		}
-
-		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
-
-		// Parse and validate JWT
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(AppConfig.JWTSecret), nil
-		})
-
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid or expired token"})
-			return
-		}
-
-		// Extract claims
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			c.Set("user_id", claims["user_id"].(string))
-			c.Set("email", claims["email"].(string))
-		} else {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid token claims"})
-			return
-		}
-
-		c.Next()
-	}
+	return token.SignedString([]byte(config.AppConfig.JWTSecret))
 }
 
 // generateStateToken generates a random state token for OAuth
 func generateStateToken() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
 }

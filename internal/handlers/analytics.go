@@ -1,4 +1,4 @@
-package main
+package handlers
 
 import (
 	"strings"
@@ -6,13 +6,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+
+	"patrn.ink/internal/logger"
+	"patrn.ink/internal/models"
+	"patrn.ink/internal/storage"
 )
 
 // RecordAnalytics records click analytics asynchronously
 func RecordAnalytics(c *gin.Context, shortCode string) {
 	// Run asynchronously to not block redirect
 	go func() {
-		event := &AnalyticsEvent{
+		event := &models.AnalyticsEvent{
 			ShortCode: shortCode,
 			Timestamp: time.Now(),
 			Referrer:  c.Request.Referer(),
@@ -21,8 +25,8 @@ func RecordAnalytics(c *gin.Context, shortCode string) {
 			Country:   extractCountryFromIP(c.ClientIP()),
 		}
 
-		if err := SaveAnalyticsEvent(event); err != nil {
-			Logger.Error("Failed to save analytics", zap.Error(err))
+		if err := storage.SaveAnalyticsEvent(event); err != nil {
+			logger.Logger.Error("Failed to save analytics", zap.Error(err))
 		}
 	}()
 }
@@ -40,7 +44,7 @@ func GetAnalyticsHandler(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	// Verify ownership
-	link, err := GetLink(code)
+	link, err := storage.GetLink(code)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Link not found"})
 		return
@@ -53,7 +57,7 @@ func GetAnalyticsHandler(c *gin.Context) {
 
 	// In a real implementation, you'd query the Analytics table
 	// and aggregate the data. For now, return basic info
-	summary := &AnalyticsSummary{
+	summary := &models.AnalyticsSummary{
 		TotalClicks:  link.Clicks,
 		UniqueClicks: link.Clicks, // Would need distinct count from Analytics table
 		TopReferrers: make(map[string]int64),

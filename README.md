@@ -63,9 +63,6 @@ cp .env.example .env
 ```bash
 # Start all services
 docker-compose up --build
-
-# Or use Makefile
-make dev
 ```
 
 The application will be available at `http://localhost:8080`
@@ -119,11 +116,11 @@ Response:
 
 ```json
 {
-  "short_url": "http://localhost:8080/my-link",
-  "short_code": "my-link",
-  "long_url": "https://example.com/very/long/url",
-  "qr_code_url": "http://localhost:8080/my-link/qr",
-  "expires_at": "2026-01-25T18:00:00Z"
+	"short_url": "http://localhost:8080/my-link",
+	"short_code": "my-link",
+	"long_url": "https://example.com/very/long/url",
+	"qr_code_url": "http://localhost:8080/my-link/qr",
+	"expires_at": "2026-01-25T18:00:00Z"
 }
 ```
 
@@ -144,9 +141,6 @@ curl http://localhost:8080/my-link/qr -o qrcode.png
 
 ```bash
 # Run tests
-make test
-
-# Run with race detector
 go test -race ./...
 
 # Check coverage
@@ -177,16 +171,14 @@ Available metrics:
 
 All configuration via environment variables (see `.env.example`):
 
-| Variable                    | Description         | Default                |
-| --------------------------- | ------------------- | ---------------------- |
-| `PORT`                      | Server port         | `8080`                 |
-| `GOOGLE_CLIENT_ID`          | OAuth client ID     | Required               |
-| `GOOGLE_CLIENT_SECRET`      | OAuth secret        | Required               |
-| `JWT_SECRET`                | JWT signing key     | `dev-secret-key`       |
-| `DYNAMODB_ENDPOINT`         | Local endpoint      | `http://dynamodb:8000` |
-| `REDIS_ADDR`                | Redis address       | `redis:6379`           |
-| `RATE_LIMIT_REQUESTS`       | Requests per window | `100`                  |
-| `RATE_LIMIT_WINDOW_SECONDS` | Rate limit window   | `60`                   |
+| Variable               | Description     | Default                |
+| ---------------------- | --------------- | ---------------------- |
+| `PORT`                 | Server port     | `8080`                 |
+| `GOOGLE_CLIENT_ID`     | OAuth client ID | Required               |
+| `GOOGLE_CLIENT_SECRET` | OAuth secret    | Required               |
+| `JWT_SECRET`           | JWT signing key | `dev-secret-key`       |
+| `DYNAMODB_ENDPOINT`    | Local endpoint  | `http://dynamodb:8000` |
+| `REDIS_ADDR`           | Redis address   | `redis:6379`           |
 
 ## 🏭 Production Deployment
 
@@ -202,10 +194,7 @@ All configuration via environment variables (see `.env.example`):
 
 ```bash
 # Build Docker image
-docker build -t patrn-ink:latest .
-
-# Or use Makefile
-make build
+docker build -t patrnink-api:latest .
 ```
 
 ## 🛠️ Technology Stack

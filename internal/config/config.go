@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -28,16 +28,12 @@ type Config struct {
 	AWSRegion        string
 	DynamoDBEndpoint string
 
-	// Redis
+	// Redis (for caching)
 	RedisAddr     string
 	RedisPassword string
 
 	// CORS
 	AllowedOrigins []string
-
-	// Rate Limiting
-	RateLimitRequests int
-	RateLimitWindow   time.Duration
 }
 
 var AppConfig *Config
@@ -49,16 +45,6 @@ func LoadConfig() error {
 	jwtExpHours, err := strconv.Atoi(getEnv("JWT_EXPIRATION_HOURS", "168"))
 	if err != nil {
 		return fmt.Errorf("invalid JWT_EXPIRATION_HOURS: %w", err)
-	}
-
-	rateLimitReqs, err := strconv.Atoi(getEnv("RATE_LIMIT_REQUESTS", "100"))
-	if err != nil {
-		return fmt.Errorf("invalid RATE_LIMIT_REQUESTS: %w", err)
-	}
-
-	rateLimitWindow, err := strconv.Atoi(getEnv("RATE_LIMIT_WINDOW_SECONDS", "60"))
-	if err != nil {
-		return fmt.Errorf("invalid RATE_LIMIT_WINDOW_SECONDS: %w", err)
 	}
 
 	AppConfig = &Config{
@@ -80,9 +66,6 @@ func LoadConfig() error {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		AllowedOrigins: strings.Split(getEnv("ALLOWED_ORIGINS", "http://localhost:3000"), ","),
-
-		RateLimitRequests: rateLimitReqs,
-		RateLimitWindow:   time.Duration(rateLimitWindow) * time.Second,
 	}
 
 	// Validate required fields in production

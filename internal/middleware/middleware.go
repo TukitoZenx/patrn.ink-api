@@ -1,14 +1,16 @@
-package main
+package middleware
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
+
+	"patrn.ink/internal/config"
+	"patrn.ink/internal/logger"
 )
 
 var (
@@ -37,6 +39,11 @@ var (
 	)
 )
 
+// IncRedirects increments the redirect counter
+func IncRedirects() {
+	redirectsTotal.Inc()
+}
+
 // LoggingMiddleware logs all HTTP requests
 func LoggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -48,7 +55,7 @@ func LoggingMiddleware() gin.HandlerFunc {
 		duration := time.Since(start)
 		status := c.Writer.Status()
 
-		Logger.Info("HTTP Request",
+		logger.Logger.Info("HTTP Request",
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
 			zap.Int("status", status),
@@ -77,60 +84,6 @@ func MetricsMiddleware() gin.HandlerFunc {
 	}
 }
 
-// RateLimitMiddleware implements token bucket rate limiting per user/IP
-func RateLimitMiddleware() gin.HandlerFunc {
-	type bucket struct {
-		tokens     int
-		lastRefill time.Time
-		mu         sync.Mutex
-	}
-
-	buckets := make(map[string]*bucket)
-	bucketsLock := sync.RWMutex{}
-
-	return func(c *gin.Context) {
-		// Use user_id if authenticated, otherwise IP address
-		key := c.ClientIP()
-		if userID, exists := c.Get("user_id"); exists {
-			key = userID.(string)
-		}
-
-		bucketsLock.Lock()
-		b, exists := buckets[key]
-		if !exists {
-			b = &bucket{
-				tokens:     AppConfig.RateLimitRequests,
-				lastRefill: time.Now(),
-			}
-			buckets[key] = b
-		}
-		bucketsLock.Unlock()
-
-		b.mu.Lock()
-		defer b.mu.Unlock()
-
-		// Refill tokens based on elapsed time
-		now := time.Now()
-		elapsed := now.Sub(b.lastRefill)
-		if elapsed >= AppConfig.RateLimitWindow {
-			b.tokens = AppConfig.RateLimitRequests
-			b.lastRefill = now
-		}
-
-		// Check if request is allowed
-		if b.tokens <= 0 {
-			c.AbortWithStatusJSON(429, gin.H{
-				"error":       "Rate limit exceeded",
-				"retry_after": AppConfig.RateLimitWindow.Seconds(),
-			})
-			return
-		}
-
-		b.tokens--
-		c.Next()
-	}
-}
-
 // CORSMiddleware handles CORS with configured origins
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -138,7 +91,7 @@ func CORSMiddleware() gin.HandlerFunc {
 
 		// Check if origin is allowed
 		allowed := false
-		for _, allowedOrigin := range AppConfig.AllowedOrigins {
+		for _, allowedOrigin := range config.AppConfig.AllowedOrigins {
 			if origin == allowedOrigin || allowedOrigin == "*" {
 				allowed = true
 				break

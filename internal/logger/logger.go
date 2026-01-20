@@ -1,8 +1,10 @@
-package main
+package logger
 
 import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"patrn.ink/internal/config"
 )
 
 var Logger *zap.Logger
@@ -11,12 +13,12 @@ var Logger *zap.Logger
 func InitLogger() error {
 	var err error
 
-	if AppConfig.Environment == "production" {
+	if config.AppConfig.Environment == "production" {
 		Logger, err = zap.NewProduction()
 	} else {
-		config := zap.NewDevelopmentConfig()
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		Logger, err = config.Build()
+		cfg := zap.NewDevelopmentConfig()
+		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		Logger, err = cfg.Build()
 	}
 
 	if err != nil {

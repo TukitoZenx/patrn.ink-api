@@ -17,12 +17,10 @@ services:
       - DYNAMODB_ENDPOINT=http://dynamodb:8000
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=ap-south-1
-      - REDIS_ADDR=${REDIS_ADDR}
+      - AWS_REGION=${AWS_REGION}
+      - REDIS_ADDR=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-      - RATE_LIMIT_REQUESTS=100
-      - RATE_LIMIT_WINDOW_SECONDS=60
     depends_on:
       - redis
       - dynamodb
@@ -44,4 +42,3 @@ services:
     volumes:
       - "./docker/dynamodb:/home/dynamodblocal/data"
     working_dir: /home/dynamodblocal
-    

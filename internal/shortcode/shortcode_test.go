@@ -1,8 +1,6 @@
-package main
+package shortcode
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestEncode(t *testing.T) {
 	tests := []struct {
@@ -45,9 +43,9 @@ func TestIsValidCustomCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidCustomCode(tt.code)
+			result := IsValidCustomCode(tt.code)
 			if result != tt.expected {
-				t.Errorf("isValidCustomCode(%s) = %v; want %v", tt.code, result, tt.expected)
+				t.Errorf("IsValidCustomCode(%s) = %v; want %v", tt.code, result, tt.expected)
 			}
 		})
 	}

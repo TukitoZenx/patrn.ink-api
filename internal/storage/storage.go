@@ -1,27 +1,34 @@
-package main
+package storage
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
+
+	"patrn.ink/internal/config"
+	"patrn.ink/internal/logger"
+	"patrn.ink/internal/models"
 )
 
 var rdb *redis.Client
 var ddb *dynamodb.Client
 var ctx = context.Background()
 
-// InitRedis initializes Redis connection
+// InitRedis initializes Redis connection for caching
 func InitRedis() error {
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     AppConfig.RedisAddr,
-		Password: AppConfig.RedisPassword,
+		Addr:     config.AppConfig.RedisAddr,
+		Password: config.AppConfig.RedisPassword,
 		DB:       0,
 	})
 
@@ -30,21 +37,21 @@ func InitRedis() error {
 		return fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	Logger.Info("Redis connected successfully")
+	logger.Logger.Info("Redis connected successfully")
 	return nil
 }
 
 // InitDynamo initializes DynamoDB connection and creates tables
 func InitDynamo() error {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(AppConfig.AWSRegion))
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(config.AppConfig.AWSRegion))
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
 	// Use custom endpoint for local DynamoDB
-	if AppConfig.DynamoDBEndpoint != "" {
+	if config.AppConfig.DynamoDBEndpoint != "" {
 		ddb = dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
-			o.BaseEndpoint = aws.String(AppConfig.DynamoDBEndpoint)
+			o.BaseEndpoint = aws.String(config.AppConfig.DynamoDBEndpoint)
 		})
 	} else {
 		ddb = dynamodb.NewFromConfig(cfg)
@@ -55,8 +62,29 @@ func InitDynamo() error {
 		return fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	Logger.Info("DynamoDB initialized successfully")
+	logger.Logger.Info("DynamoDB initialized successfully")
 	return nil
+}
+
+// PingRedis checks Redis health
+func PingRedis() error {
+	return rdb.Ping(ctx).Err()
+}
+
+// PingDynamo checks DynamoDB health
+func PingDynamo() error {
+	_, err := ddb.ListTables(ctx, &dynamodb.ListTablesInput{})
+	return err
+}
+
+// GetCacheBytes returns cached bytes for a key
+func GetCacheBytes(key string) ([]byte, error) {
+	return rdb.Get(ctx, key).Bytes()
+}
+
+// SetCacheBytes stores bytes in cache
+func SetCacheBytes(key string, value []byte, ttl time.Duration) error {
+	return rdb.Set(ctx, key, value, ttl).Err()
 }
 
 // createTablesIfNotExist creates the required DynamoDB tables
@@ -111,31 +139,42 @@ func createTablesIfNotExist() error {
 				BillingMode:          types.BillingModePayPerRequest,
 			})
 
+			var alreadyExists *types.ResourceInUseException
+			if err != nil && errors.As(err, &alreadyExists) {
+				continue
+			}
 			if err != nil {
 				return fmt.Errorf("failed to create table %s: %w", table.name, err)
 			}
 
-			Logger.Info("Created DynamoDB table", zap.String("table", table.name))
+			logger.Logger.Info("Created DynamoDB table", zap.String("table", table.name))
 		}
 	}
 
 	return nil
 }
 
-// GetNextID generates a unique ID using Redis counter
-func GetNextID() (uint64, error) {
-	id, err := rdb.Incr(ctx, "global_counter").Result()
-	if err != nil {
-		return 0, fmt.Errorf("failed to generate ID: %w", err)
+// base62Chars for encoding IDs
+const base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// GenerateShortCode generates a cryptographically secure random short code
+func GenerateShortCode(length int) (string, error) {
+	result := make([]byte, length)
+	for i := 0; i < length; i++ {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(base62Chars))))
+		if err != nil {
+			return "", fmt.Errorf("failed to generate random code: %w", err)
+		}
+		result[i] = base62Chars[num.Int64()]
 	}
-	return uint64(id), nil
+	return string(result), nil
 }
 
 // SaveToCache stores URL in Redis cache
 func SaveToCache(code string, url string) error {
 	err := rdb.Set(ctx, "url:"+code, url, 24*time.Hour).Err()
 	if err != nil {
-		Logger.Error("Failed to save to cache", zap.Error(err), zap.String("code", code))
+		logger.Logger.Error("Failed to save to cache", zap.Error(err), zap.String("code", code))
 		return err
 	}
 	return nil
@@ -151,7 +190,7 @@ func GetFromCache(code string) (string, error) {
 }
 
 // SaveUser saves user to DynamoDB
-func SaveUser(user *User) error {
+func SaveUser(user *models.User) error {
 	_, err := ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String("Users"),
 		Item: map[string]types.AttributeValue{
@@ -170,7 +209,7 @@ func SaveUser(user *User) error {
 }
 
 // GetUser retrieves user from DynamoDB
-func GetUser(id string) (*User, error) {
+func GetUser(id string) (*models.User, error) {
 	result, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String("Users"),
 		Key: map[string]types.AttributeValue{
@@ -188,7 +227,7 @@ func GetUser(id string) (*User, error) {
 
 	createdAt, _ := time.Parse(time.RFC3339, result.Item["CreatedAt"].(*types.AttributeValueMemberS).Value)
 
-	return &User{
+	return &models.User{
 		ID:        result.Item["ID"].(*types.AttributeValueMemberS).Value,
 		Email:     result.Item["Email"].(*types.AttributeValueMemberS).Value,
 		Name:      result.Item["Name"].(*types.AttributeValueMemberS).Value,
@@ -198,7 +237,7 @@ func GetUser(id string) (*User, error) {
 }
 
 // SaveLink saves a link to DynamoDB
-func SaveLink(link *Link) error {
+func SaveLink(link *models.Link) error {
 	item := map[string]types.AttributeValue{
 		"ShortCode":   &types.AttributeValueMemberS{Value: link.ShortCode},
 		"LongURL":     &types.AttributeValueMemberS{Value: link.LongURL},
@@ -229,7 +268,7 @@ func SaveLink(link *Link) error {
 }
 
 // GetLink retrieves a link from DynamoDB
-func GetLink(shortCode string) (*Link, error) {
+func GetLink(shortCode string) (*models.Link, error) {
 	result, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String("Links"),
 		Key: map[string]types.AttributeValue{
@@ -245,7 +284,7 @@ func GetLink(shortCode string) (*Link, error) {
 		return nil, fmt.Errorf("link not found")
 	}
 
-	link := &Link{
+	link := &models.Link{
 		ShortCode:   result.Item["ShortCode"].(*types.AttributeValueMemberS).Value,
 		LongURL:     result.Item["LongURL"].(*types.AttributeValueMemberS).Value,
 		UserID:      result.Item["UserID"].(*types.AttributeValueMemberS).Value,
@@ -284,7 +323,7 @@ func IncrementClicks(shortCode string) error {
 }
 
 // SaveAnalyticsEvent saves an analytics event to DynamoDB
-func SaveAnalyticsEvent(event *AnalyticsEvent) error {
+func SaveAnalyticsEvent(event *models.AnalyticsEvent) error {
 	_, err := ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String("Analytics"),
 		Item: map[string]types.AttributeValue{
@@ -298,7 +337,7 @@ func SaveAnalyticsEvent(event *AnalyticsEvent) error {
 	})
 
 	if err != nil {
-		Logger.Error("Failed to save analytics", zap.Error(err))
+		logger.Logger.Error("Failed to save analytics", zap.Error(err))
 		return err
 	}
 
@@ -306,7 +345,7 @@ func SaveAnalyticsEvent(event *AnalyticsEvent) error {
 }
 
 // GetUserLinks retrieves all links for a specific user
-func GetUserLinks(userID string) ([]*Link, error) {
+func GetUserLinks(userID string) ([]*models.Link, error) {
 	// Note: In production, you'd want to add a GSI on UserID for efficient querying
 	// For now, we'll do a scan (not ideal for large datasets)
 	result, err := ddb.Scan(ctx, &dynamodb.ScanInput{
@@ -321,9 +360,9 @@ func GetUserLinks(userID string) ([]*Link, error) {
 		return nil, fmt.Errorf("failed to get user links: %w", err)
 	}
 
-	links := make([]*Link, 0, len(result.Items))
+	links := make([]*models.Link, 0, len(result.Items))
 	for _, item := range result.Items {
-		link := &Link{
+		link := &models.Link{
 			ShortCode:   item["ShortCode"].(*types.AttributeValueMemberS).Value,
 			LongURL:     item["LongURL"].(*types.AttributeValueMemberS).Value,
 			UserID:      item["UserID"].(*types.AttributeValueMemberS).Value,

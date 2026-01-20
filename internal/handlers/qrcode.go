@@ -1,4 +1,4 @@
-package main
+package handlers
 
 import (
 	"bytes"
@@ -8,6 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/skip2/go-qrcode"
 	"go.uber.org/zap"
+
+	"patrn.ink/internal/config"
+	"patrn.ink/internal/logger"
+	"patrn.ink/internal/storage"
 )
 
 // QRCodeHandler generates QR code for a short URL
@@ -15,7 +19,7 @@ func QRCodeHandler(c *gin.Context) {
 	code := c.Param("code")
 
 	// Check if link exists
-	link, err := GetLink(code)
+	link, err := storage.GetLink(code)
 	if err != nil || !link.IsActive {
 		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
 		return
@@ -29,23 +33,23 @@ func QRCodeHandler(c *gin.Context) {
 
 	// Try to get from cache first
 	cacheKey := "qr:" + code
-	cachedQR, err := rdb.Get(ctx, cacheKey).Bytes()
+	cachedQR, err := storage.GetCacheBytes(cacheKey)
 	if err == nil {
 		c.Data(http.StatusOK, "image/png", cachedQR)
 		return
 	}
 
 	// Generate QR code
-	shortURL := AppConfig.BaseURL + "/" + code
+	shortURL := config.AppConfig.BaseURL + "/" + code
 	qr, err := qrcode.Encode(shortURL, qrcode.Medium, 256)
 	if err != nil {
-		Logger.Error("Failed to generate QR code", zap.Error(err), zap.String("code", code))
+		logger.Logger.Error("Failed to generate QR code", zap.Error(err), zap.String("code", code))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate QR code"})
 		return
 	}
 
 	// Cache QR code for 24 hours
-	_ = rdb.Set(ctx, cacheKey, qr, 24*time.Hour).Err()
+	_ = storage.SetCacheBytes(cacheKey, qr, 24*time.Hour)
 
 	c.Data(http.StatusOK, "image/png", qr)
 }
