@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/google"
 
 	"patrn.ink/internal/config"
@@ -21,9 +22,11 @@ import (
 )
 
 var googleOAuthConfig *oauth2.Config
+var githubOAuthConfig *oauth2.Config
 
-// InitOAuth initializes Google OAuth configuration
+// InitOAuth initializes OAuth configurations
 func InitOAuth() {
+	// Google OAuth
 	googleOAuthConfig = &oauth2.Config{
 		ClientID:     config.AppConfig.GoogleClientID,
 		ClientSecret: config.AppConfig.GoogleClientSecret,
@@ -33,6 +36,18 @@ func InitOAuth() {
 			"https://www.googleapis.com/auth/userinfo.profile",
 		},
 		Endpoint: google.Endpoint,
+	}
+
+	// GitHub OAuth
+	githubOAuthConfig = &oauth2.Config{
+		ClientID:     config.AppConfig.GitHubClientID,
+		ClientSecret: config.AppConfig.GitHubClientSecret,
+		RedirectURL:  config.AppConfig.GitHubRedirectURL,
+		Scopes: []string{
+			"read:user",
+			"user:email",
+		},
+		Endpoint: github.Endpoint,
 	}
 }
 
@@ -68,7 +83,7 @@ func GoogleCallbackHandler(c *gin.Context) {
 	}
 
 	// Get user info from Google
-	userInfo, err := getUserInfo(token.AccessToken)
+	userInfo, err := getGoogleUserInfo(token.AccessToken)
 	if err != nil {
 		logger.Logger.Error("Failed to get user info", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
@@ -77,10 +92,11 @@ func GoogleCallbackHandler(c *gin.Context) {
 
 	// Create or update user in database
 	user := &models.User{
-		ID:        userInfo["id"].(string),
+		ID:        "google_" + userInfo["id"].(string),
 		Email:     userInfo["email"].(string),
 		Name:      userInfo["name"].(string),
 		Picture:   userInfo["picture"].(string),
+		Provider:  "google",
 		CreatedAt: time.Now(),
 	}
 
@@ -96,15 +112,93 @@ func GoogleCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Return JWT token and user info
-	c.JSON(http.StatusOK, gin.H{
-		"token": jwtToken,
-		"user":  user,
-	})
+	// Redirect to frontend with token
+	redirectURL := config.AppConfig.FrontendURL + "/auth/callback?token=" + jwtToken
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
-// getUserInfo fetches user information from Google
-func getUserInfo(accessToken string) (map[string]interface{}, error) {
+// GitHubLoginHandler redirects user to GitHub OAuth consent page
+func GitHubLoginHandler(c *gin.Context) {
+	if config.AppConfig.GitHubClientID == "" {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "GitHub login not configured"})
+		return
+	}
+
+	// Generate state token for CSRF protection
+	state := generateStateToken()
+
+	// Store state in session (using cookie for simplicity)
+	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+
+	url := githubOAuthConfig.AuthCodeURL(state)
+	c.Redirect(http.StatusTemporaryRedirect, url)
+}
+
+// GitHubCallbackHandler handles OAuth callback from GitHub
+func GitHubCallbackHandler(c *gin.Context) {
+	// Verify state token
+	state := c.Query("state")
+	cookieState, err := c.Cookie("oauth_state")
+	if err != nil || state != cookieState {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state token"})
+		return
+	}
+
+	// Exchange authorization code for token
+	code := c.Query("code")
+	token, err := githubOAuthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		logger.Logger.Error("Failed to exchange code for token", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to authenticate"})
+		return
+	}
+
+	// Get user info from GitHub
+	userInfo, err := getGitHubUserInfo(token.AccessToken)
+	if err != nil {
+		logger.Logger.Error("Failed to get GitHub user info", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
+		return
+	}
+
+	// Get user email (may need separate API call)
+	email := ""
+	if userInfo["email"] != nil {
+		email = userInfo["email"].(string)
+	} else {
+		// Fetch email from GitHub emails API
+		email, _ = getGitHubPrimaryEmail(token.AccessToken)
+	}
+
+	// Create or update user in database
+	user := &models.User{
+		ID:        "github_" + formatGitHubID(userInfo["id"]),
+		Email:     email,
+		Name:      getStringOrDefault(userInfo["name"], userInfo["login"].(string)),
+		Picture:   getStringOrDefault(userInfo["avatar_url"], ""),
+		Provider:  "github",
+		CreatedAt: time.Now(),
+	}
+
+	if err := storage.SaveUser(user); err != nil {
+		logger.Logger.Error("Failed to save user", zap.Error(err))
+	}
+
+	// Generate JWT token
+	jwtToken, err := generateJWT(user.ID, user.Email)
+	if err != nil {
+		logger.Logger.Error("Failed to generate JWT", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// Redirect to frontend with token
+	redirectURL := config.AppConfig.FrontendURL + "/auth/callback?token=" + jwtToken
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+}
+
+// getGoogleUserInfo fetches user information from Google
+func getGoogleUserInfo(accessToken string) (map[string]interface{}, error) {
 	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + accessToken)
 	if err != nil {
 		return nil, err
@@ -117,6 +211,91 @@ func getUserInfo(accessToken string) (map[string]interface{}, error) {
 	}
 
 	return userInfo, nil
+}
+
+// getGitHubUserInfo fetches user information from GitHub
+func getGitHubUserInfo(accessToken string) (map[string]interface{}, error) {
+	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var userInfo map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		return nil, err
+	}
+
+	return userInfo, nil
+}
+
+// getGitHubPrimaryEmail fetches the primary email from GitHub
+func getGitHubPrimaryEmail(accessToken string) (string, error) {
+	req, err := http.NewRequest("GET", "https://api.github.com/user/emails", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var emails []struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+		return "", err
+	}
+
+	for _, email := range emails {
+		if email.Primary && email.Verified {
+			return email.Email, nil
+		}
+	}
+
+	if len(emails) > 0 {
+		return emails[0].Email, nil
+	}
+
+	return "", nil
+}
+
+// formatGitHubID formats the GitHub ID (can be float64 from JSON)
+func formatGitHubID(id interface{}) string {
+	switch v := id.(type) {
+	case float64:
+		return string(rune(int(v)))
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+// getStringOrDefault returns the string value or default if nil/empty
+func getStringOrDefault(val interface{}, def string) string {
+	if val == nil {
+		return def
+	}
+	if s, ok := val.(string); ok && s != "" {
+		return s
+	}
+	return def
 }
 
 // generateJWT creates a JWT token for authenticated user
@@ -137,4 +316,17 @@ func generateStateToken() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
+}
+
+// GetCurrentUserHandler returns the current authenticated user
+func GetCurrentUserHandler(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	user, err := storage.GetUser(userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
 }

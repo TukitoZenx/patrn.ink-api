@@ -20,6 +20,11 @@ type Config struct {
 	GoogleClientSecret string
 	GoogleRedirectURL  string
 
+	// GitHub OAuth
+	GitHubClientID     string
+	GitHubClientSecret string
+	GitHubRedirectURL  string
+
 	// JWT
 	JWTSecret     string
 	JWTExpiration time.Duration
@@ -34,6 +39,13 @@ type Config struct {
 
 	// CORS
 	AllowedOrigins []string
+
+	// Rate Limiting
+	DefaultRateLimit  int // Requests per minute for JWT auth
+	APITokenRateLimit int // Default rate limit for API tokens
+
+	// Frontend URL (for OAuth redirects)
+	FrontendURL string
 }
 
 var AppConfig *Config
@@ -47,6 +59,9 @@ func LoadConfig() error {
 		return fmt.Errorf("invalid JWT_EXPIRATION_HOURS: %w", err)
 	}
 
+	defaultRateLimit, _ := strconv.Atoi(getEnv("DEFAULT_RATE_LIMIT", "60"))
+	apiTokenRateLimit, _ := strconv.Atoi(getEnv("API_TOKEN_RATE_LIMIT", "100"))
+
 	AppConfig = &Config{
 		Port:        getEnv("PORT", "8080"),
 		Environment: getEnv("ENVIRONMENT", "development"),
@@ -55,6 +70,10 @@ func LoadConfig() error {
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/auth/google/callback"),
+
+		GitHubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
+		GitHubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", "http://localhost:8080/auth/github/callback"),
 
 		JWTSecret:     getEnv("JWT_SECRET", "dev-secret-key"),
 		JWTExpiration: time.Duration(jwtExpHours) * time.Hour,
@@ -66,6 +85,11 @@ func LoadConfig() error {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		AllowedOrigins: strings.Split(getEnv("ALLOWED_ORIGINS", "http://localhost:3000"), ","),
+
+		DefaultRateLimit:  defaultRateLimit,
+		APITokenRateLimit: apiTokenRateLimit,
+
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 	}
 
 	// Validate required fields in production

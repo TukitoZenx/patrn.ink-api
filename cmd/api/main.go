@@ -75,25 +75,64 @@ func main() {
 	// Authentication routes
 	auth := r.Group("/auth")
 	{
+		// Google OAuth
 		auth.GET("/google/login", handlers.GoogleLoginHandler)
 		auth.GET("/google/callback", handlers.GoogleCallbackHandler)
+
+		// GitHub OAuth
+		auth.GET("/github/login", handlers.GitHubLoginHandler)
+		auth.GET("/github/callback", handlers.GitHubCallbackHandler)
 	}
 
-	// Protected API routes (require JWT) - rate limiting handled by Cloudflare CDN
+	// Protected API routes (require JWT or API token)
 	api := r.Group("/api")
 	api.Use(middleware.AuthMiddleware())
+	api.Use(middleware.APITokenRateLimitMiddleware())
 	{
-		api.POST("/shorten", handlers.ShortenHandler)
-		api.GET("/links", handlers.GetLinksHandler)
-		api.GET("/links/:code", handlers.GetLinkDetailsHandler)
-		api.PUT("/links/:code", handlers.UpdateLinkHandler)
-		api.DELETE("/links/:code", handlers.DeleteLinkHandler)
-		api.GET("/analytics/:code", handlers.GetAnalyticsHandler)
+		// User info
+		api.GET("/me", handlers.GetCurrentUserHandler)
+
+		// Link management
+		api.POST("/shorten", middleware.ScopeMiddleware("links:write"), handlers.ShortenHandler)
+		api.GET("/links", middleware.ScopeMiddleware("links:read"), handlers.GetLinksHandler)
+		api.GET("/links/:code", middleware.ScopeMiddleware("links:read"), handlers.GetLinkDetailsHandler)
+		api.PUT("/links/:code", middleware.ScopeMiddleware("links:write"), handlers.UpdateLinkHandler)
+		api.DELETE("/links/:code", middleware.ScopeMiddleware("links:write"), handlers.DeleteLinkHandler)
+
+		// Analytics
+		api.GET("/analytics/:code", middleware.ScopeMiddleware("analytics:read"), handlers.GetAnalyticsHandler)
+		api.GET("/analytics/:code/export", middleware.ScopeMiddleware("analytics:read"), handlers.ExportAnalyticsHandler)
+
+		// Bulk operations
+		api.POST("/bulk/delete", middleware.ScopeMiddleware("bulk:write"), handlers.BulkDeleteHandler)
+		api.POST("/bulk/import", middleware.ScopeMiddleware("bulk:write"), handlers.BulkImportHandler)
+		api.GET("/export/links", middleware.ScopeMiddleware("bulk:read"), handlers.ExportLinksHandler)
+
+		// API Token management (JWT only - no API token scope check)
+		tokens := api.Group("/tokens")
+		{
+			tokens.POST("", handlers.CreateAPITokenHandler)
+			tokens.GET("", handlers.ListAPITokensHandler)
+			tokens.DELETE("/:id", handlers.RevokeAPITokenHandler)
+			tokens.PUT("/:id/rate-limit", handlers.UpdateAPITokenRateLimitHandler)
+		}
 	}
 
 	// Public routes (no auth required)
-	r.GET("/:code", handlers.RedirectHandler)
+	// Link preview (can be used without auth for URL metadata)
+	r.GET("/api/preview", handlers.LinkPreviewHandler)
+
+	// Password verification for protected links
+	r.POST("/:code/verify", handlers.VerifyPasswordHandler)
+
+	// Link preview by code
+	r.GET("/:code/preview", handlers.GetLinkPreviewByCodeHandler)
+
+	// QR code
 	r.GET("/:code/qr", handlers.QRCodeHandler)
+
+	// Redirect (must be last to avoid conflicts)
+	r.GET("/:code", handlers.RedirectHandler)
 
 	// Create server with graceful shutdown
 	srv := &http.Server{
