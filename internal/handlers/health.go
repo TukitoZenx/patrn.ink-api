@@ -10,7 +10,24 @@ import (
 	"patrn.ink/internal/storage"
 )
 
+// HealthResponse represents the health check response
+type HealthResponse struct {
+	Status    string `json:"status" example:"healthy"`
+	Redis     bool   `json:"redis" example:"true"`
+	DynamoDB  bool   `json:"dynamodb" example:"true"`
+	Version   string `json:"version" example:"1.0.0"`
+	Hostname  string `json:"hostname" example:"api-server-1"`
+	Timestamp string `json:"timestamp" example:"2026-01-27T10:00:00Z"`
+}
+
 // HealthCheckHandler returns service health status
+// @Summary      Health check
+// @Description  Returns the health status of the API and its dependencies
+// @Tags         System
+// @Produce      json
+// @Success      200  {object}  HealthResponse
+// @Failure      503  {object}  HealthResponse
+// @Router       /health [get]
 func HealthCheckHandler(c *gin.Context) {
 	// Check Redis connection
 	redisOK := storage.PingRedis() == nil

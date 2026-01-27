@@ -18,6 +18,15 @@ import (
 )
 
 // LinkPreviewHandler fetches metadata for a URL to generate a preview
+// @Summary      Get URL preview
+// @Description  Fetches and returns metadata (title, description, favicon) for a given URL
+// @Tags         Preview
+// @Produce      json
+// @Param        url  query     string  true  "URL to fetch preview for"
+// @Success      200  {object}  models.LinkPreview
+// @Failure      400  {object}  map[string]string  "Invalid or missing URL"
+// @Failure      500  {object}  map[string]string  "Failed to fetch URL"
+// @Router       /api/preview [get]
 func LinkPreviewHandler(c *gin.Context) {
 	targetURL := c.Query("url")
 	if targetURL == "" {
@@ -179,6 +188,15 @@ func extractMetadata(n *html.Node, preview *models.LinkPreview) {
 }
 
 // GetLinkPreviewByCodeHandler returns preview for an existing short link
+// @Summary      Get link preview by code
+// @Description  Returns URL preview metadata for an existing short link
+// @Tags         Preview
+// @Produce      json
+// @Param        code  path      string  true  "Short code"
+// @Success      200   {object}  models.LinkPreview
+// @Failure      404   {object}  map[string]string  "Link not found"
+// @Failure      500   {object}  map[string]string  "Failed to fetch preview"
+// @Router       /{code}/preview [get]
 func GetLinkPreviewByCodeHandler(c *gin.Context) {
 	code := c.Param("code")
 

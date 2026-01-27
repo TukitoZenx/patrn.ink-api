@@ -296,6 +296,10 @@ func SaveLink(link *models.Link) error {
 		item["Description"] = &types.AttributeValueMemberS{Value: link.Description}
 	}
 
+	if link.AgeVerification > 0 {
+		item["AgeVerification"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", link.AgeVerification)}
+	}
+
 	_, err := ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String("Links"),
 		Item:      item,
@@ -374,6 +378,12 @@ func GetLink(shortCode string) (*models.Link, error) {
 
 	if descAttr, ok := result.Item["Description"]; ok {
 		link.Description = descAttr.(*types.AttributeValueMemberS).Value
+	}
+
+	if ageVerifyAttr, ok := result.Item["AgeVerification"]; ok {
+		var ageVal int
+		fmt.Sscanf(ageVerifyAttr.(*types.AttributeValueMemberN).Value, "%d", &ageVal)
+		link.AgeVerification = models.AgeVerification(ageVal)
 	}
 
 	return link, nil

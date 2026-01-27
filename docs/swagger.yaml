@@ -1,0 +1,1436 @@
+basePath: /
+definitions:
+  handlers.HealthResponse:
+    properties:
+      dynamodb:
+        example: true
+        type: boolean
+      hostname:
+        example: api-server-1
+        type: string
+      redis:
+        example: true
+        type: boolean
+      status:
+        example: healthy
+        type: string
+      timestamp:
+        example: "2026-01-27T10:00:00Z"
+        type: string
+      version:
+        example: 1.0.0
+        type: string
+    type: object
+  models.APIToken:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      last_used_at:
+        type: string
+      name:
+        type: string
+      rate_limit:
+        description: Requests per minute
+        type: integer
+      scopes:
+        description: e.g., ["links:read", "links:write", "analytics:read"]
+        items:
+          type: string
+        type: array
+      token_prefix:
+        description: First 8 chars for identification
+        type: string
+      user_id:
+        type: string
+    type: object
+  models.AgeVerification:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    type: integer
+    x-enum-varnames:
+    - AgeVerificationNone
+    - AgeVerification13Plus
+    - AgeVerification18Plus
+    - AgeVerification21Plus
+  models.AnalyticsSummary:
+    properties:
+      browser_types:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      clicks_by_date:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      clicks_by_hour:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      countries:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      device_types:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      timeline:
+        items:
+          $ref: '#/definitions/models.TimelinePoint'
+        type: array
+      top_referrers:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      total_clicks:
+        type: integer
+      unique_clicks:
+        type: integer
+    type: object
+  models.BulkDeleteRequest:
+    properties:
+      archive:
+        description: If true, archive instead of delete
+        type: boolean
+      codes:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - codes
+    type: object
+  models.BulkDeleteResponse:
+    properties:
+      deleted:
+        items:
+          type: string
+        type: array
+      failed:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  models.BulkImportError:
+    properties:
+      index:
+        type: integer
+      reason:
+        type: string
+      url:
+        type: string
+    type: object
+  models.BulkImportItem:
+    properties:
+      custom_code:
+        type: string
+      long_url:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    required:
+    - long_url
+    type: object
+  models.BulkImportRequest:
+    properties:
+      links:
+        items:
+          $ref: '#/definitions/models.BulkImportItem'
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - links
+    type: object
+  models.BulkImportResponse:
+    properties:
+      created:
+        items:
+          $ref: '#/definitions/models.CreateLinkResponse'
+        type: array
+      failed:
+        items:
+          $ref: '#/definitions/models.BulkImportError'
+        type: array
+    type: object
+  models.CreateAPITokenRequest:
+    properties:
+      expires_in:
+        description: Days until expiration (0 = never)
+        type: integer
+      name:
+        maxLength: 50
+        minLength: 1
+        type: string
+      scopes:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - name
+    - scopes
+    type: object
+  models.CreateAPITokenResponse:
+    properties:
+      api_token:
+        $ref: '#/definitions/models.APIToken'
+      token:
+        description: Raw token - only shown once!
+        type: string
+    type: object
+  models.CreateLinkRequest:
+    properties:
+      age_verification:
+        description: 0=none, 1=13+, 2=18+, 3=21+
+        type: integer
+      custom_code:
+        type: string
+      description:
+        type: string
+      expires_in:
+        description: hours
+        type: integer
+      long_url:
+        type: string
+      password:
+        type: string
+      scheduled_at:
+        description: ISO 8601 datetime
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    required:
+    - long_url
+    type: object
+  models.CreateLinkResponse:
+    properties:
+      expires_at:
+        type: string
+      long_url:
+        type: string
+      qr_code_url:
+        type: string
+      scheduled_at:
+        type: string
+      short_code:
+        type: string
+      short_url:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  models.Link:
+    properties:
+      age_verification:
+        allOf:
+        - $ref: '#/definitions/models.AgeVerification'
+        description: Age gate requirement
+      clicks:
+        type: integer
+      created_at:
+        type: string
+      custom_alias:
+        type: boolean
+      description:
+        description: Optional description
+        type: string
+      expires_at:
+        type: string
+      is_active:
+        type: boolean
+      is_archived:
+        description: Soft archive (not deleted)
+        type: boolean
+      long_url:
+        type: string
+      password:
+        description: Password hash for protected links
+        type: string
+      scheduled_at:
+        description: Link goes live at this time
+        type: string
+      short_code:
+        type: string
+      tags:
+        description: Categories/tags for organization
+        items:
+          type: string
+        type: array
+      title:
+        description: Optional link title
+        type: string
+      user_id:
+        type: string
+    type: object
+  models.LinkPreview:
+    properties:
+      description:
+        type: string
+      domain:
+        type: string
+      favicon:
+        type: string
+      image:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+    type: object
+  models.PaginatedLinks:
+    properties:
+      limit:
+        type: integer
+      links:
+        items:
+          $ref: '#/definitions/models.Link'
+        type: array
+      page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  models.PasswordVerifyRequest:
+    properties:
+      password:
+        type: string
+    required:
+    - password
+    type: object
+  models.TimelinePoint:
+    properties:
+      clicks:
+        type: integer
+      date:
+        type: string
+    type: object
+  models.UpdateLinkRequest:
+    properties:
+      description:
+        type: string
+      expires_in:
+        type: integer
+      is_archived:
+        type: boolean
+      long_url:
+        type: string
+      password:
+        type: string
+      scheduled_at:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    type: object
+  models.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      picture:
+        type: string
+      provider:
+        description: '"google" or "github"'
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@patrn.ink
+    name: API Support
+    url: https://patrn.ink/support
+  description: A powerful URL shortening service with analytics, QR codes, and link
+    management.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://patrn.ink/terms
+  title: Patrn.ink URL Shortener API
+  version: "1.0"
+paths:
+  /{code}:
+    get:
+      description: Redirects to the original URL. Returns 403 if password or age verification
+        is required.
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "301":
+          description: Redirect to long URL
+          schema:
+            type: string
+        "403":
+          description: Password or age verification required
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: URL not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "410":
+          description: Link expired, archived, or deactivated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Redirect to long URL
+      tags:
+      - Redirect
+  /{code}/preview:
+    get:
+      description: Returns URL preview metadata for an existing short link
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.LinkPreview'
+        "404":
+          description: Link not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to fetch preview
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get link preview by code
+      tags:
+      - Preview
+  /{code}/qr:
+    get:
+      description: Generates a QR code PNG image for the short URL
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - image/png
+      responses:
+        "200":
+          description: PNG image
+          schema:
+            type: file
+        "404":
+          description: URL not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "410":
+          description: Link has expired
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Generate QR code
+      tags:
+      - QR Code
+  /{code}/verify:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the password for a password-protected link and returns
+        the redirect URL
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Password verification request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.PasswordVerifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_url
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Invalid password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: URL not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Verify link password
+      tags:
+      - Redirect
+  /{code}/verify-age:
+    post:
+      consumes:
+      - application/json
+      description: Confirms the user's age and returns the redirect URL for age-restricted
+        content
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Age verification request
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            age_level:
+              type: integer
+            confirmed:
+              type: boolean
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_url
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Age requirement not met
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: URL not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Verify age for age-gated link
+      tags:
+      - Redirect
+  /api/analytics/{code}:
+    get:
+      description: Returns analytics data for a specific link including clicks, referrers,
+        devices, and more
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: 'Start date (YYYY-MM-DD, default: 30 days ago)'
+        in: query
+        name: start_date
+        type: string
+      - description: 'End date (YYYY-MM-DD, default: today)'
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AnalyticsSummary'
+        "400":
+          description: Invalid query parameters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not link owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Link not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get link analytics
+      tags:
+      - Analytics
+  /api/analytics/{code}/export:
+    get:
+      description: Exports analytics data for a specific link as CSV or JSON
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: 'Start date (YYYY-MM-DD, default: 30 days ago)'
+        in: query
+        name: start_date
+        type: string
+      - description: 'End date (YYYY-MM-DD, default: today)'
+        in: query
+        name: end_date
+        type: string
+      - description: 'Export format: csv or json (default: csv)'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      responses:
+        "200":
+          description: CSV or JSON file download
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not link owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Link not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export link analytics
+      tags:
+      - Analytics
+  /api/bulk/delete:
+    post:
+      consumes:
+      - application/json
+      description: Deletes or archives multiple links at once
+      parameters:
+      - description: Bulk delete request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BulkDeleteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.BulkDeleteResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk delete/archive links
+      tags:
+      - Bulk Operations
+  /api/bulk/import:
+    post:
+      consumes:
+      - application/json
+      description: Imports multiple links at once from a JSON array
+      parameters:
+      - description: Bulk import request (max 100 links)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BulkImportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.BulkImportResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk import links
+      tags:
+      - Bulk Operations
+  /api/export/links:
+    get:
+      description: Exports all user's links as CSV or JSON file
+      parameters:
+      - description: 'Export format: csv or json (default: csv)'
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      - text/csv
+      responses:
+        "200":
+          description: CSV or JSON file download
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export all links
+      tags:
+      - Bulk Operations
+  /api/links:
+    get:
+      description: Returns all links for the authenticated user with optional search,
+        filtering, and pagination
+      parameters:
+      - description: Search in URL, code, or title
+        in: query
+        name: search
+        type: string
+      - collectionFormat: csv
+        description: Filter by tags
+        in: query
+        items:
+          type: string
+        name: tags
+        type: array
+      - description: 'Page number (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Items per page (default: 20, max: 100)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Sort by: clicks, created_at, expires_at'
+        in: query
+        name: sort_by
+        type: string
+      - description: 'Sort order: asc, desc'
+        in: query
+        name: sort_order
+        type: string
+      - description: Filter by archived status
+        in: query
+        name: archived
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.PaginatedLinks'
+        "400":
+          description: Invalid query parameters
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List user links
+      tags:
+      - Links
+  /api/links/{code}:
+    delete:
+      description: Permanently deletes a link owned by the user
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not link owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete link
+      tags:
+      - Links
+    get:
+      description: Returns detailed information about a specific link owned by the
+        user
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Link'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not link owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Link not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get link details
+      tags:
+      - Links
+    put:
+      consumes:
+      - application/json
+      description: Updates properties of a link owned by the user
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdateLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Link'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not link owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Link not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update link
+      tags:
+      - Links
+  /api/me:
+    get:
+      description: Returns the currently authenticated user's profile information
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - User
+  /api/preview:
+    get:
+      description: Fetches and returns metadata (title, description, favicon) for
+        a given URL
+      parameters:
+      - description: URL to fetch preview for
+        in: query
+        name: url
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.LinkPreview'
+        "400":
+          description: Invalid or missing URL
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Failed to fetch URL
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get URL preview
+      tags:
+      - Preview
+  /api/shorten:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new shortened URL with optional custom code, expiration,
+        scheduling, tags, and password protection
+      parameters:
+      - description: Link creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.CreateLinkResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Custom code already in use
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create short URL
+      tags:
+      - Links
+  /api/tokens:
+    get:
+      description: Returns all API tokens for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.APIToken'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List API tokens
+      tags:
+      - API Tokens
+    post:
+      consumes:
+      - application/json
+      description: Creates a new personal API token with specified scopes for programmatic
+        access
+      parameters:
+      - description: Token creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateAPITokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.CreateAPITokenResponse'
+        "400":
+          description: Invalid request or scope
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create API token
+      tags:
+      - API Tokens
+  /api/tokens/{id}:
+    delete:
+      description: Revokes (deactivates) an API token permanently
+      parameters:
+      - description: Token ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not token owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Token not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke API token
+      tags:
+      - API Tokens
+  /api/tokens/{id}/rate-limit:
+    put:
+      consumes:
+      - application/json
+      description: Updates the rate limit (requests per minute) for an API token
+      parameters:
+      - description: Token ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Rate limit (1-1000)
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            rate_limit:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - not token owner
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update token rate limit
+      tags:
+      - API Tokens
+  /auth/github/callback:
+    get:
+      description: Handles the OAuth callback from GitHub, creates/updates user, and
+        returns JWT
+      parameters:
+      - description: OAuth state token
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: Authorization code
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "307":
+          description: Redirect with JWT token
+          schema:
+            type: string
+        "400":
+          description: Invalid state token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: GitHub OAuth callback
+      tags:
+      - Authentication
+  /auth/github/login:
+    get:
+      description: Redirects to GitHub OAuth consent page for authentication
+      responses:
+        "307":
+          description: Redirect to GitHub OAuth
+          schema:
+            type: string
+        "501":
+          description: GitHub login not configured
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: GitHub OAuth login
+      tags:
+      - Authentication
+  /auth/google/callback:
+    get:
+      description: Handles the OAuth callback from Google, creates/updates user, and
+        returns JWT
+      parameters:
+      - description: OAuth state token
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: Authorization code
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "307":
+          description: Redirect with JWT token
+          schema:
+            type: string
+        "400":
+          description: Invalid state token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Google OAuth callback
+      tags:
+      - Authentication
+  /auth/google/login:
+    get:
+      description: Redirects to Google OAuth consent page for authentication
+      responses:
+        "307":
+          description: Redirect to Google OAuth
+          schema:
+            type: string
+      summary: Google OAuth login
+      tags:
+      - Authentication
+  /health:
+    get:
+      description: Returns the health status of the API and its dependencies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.HealthResponse'
+      summary: Health check
+      tags:
+      - System
+securityDefinitions:
+  APIKeyAuth:
+    description: API token for programmatic access
+    in: header
+    name: X-API-Key
+    type: apiKey
+  BearerAuth:
+    description: JWT Bearer token or API token (prefix with "Bearer ")
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

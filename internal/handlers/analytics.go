@@ -42,6 +42,21 @@ func extractCountryFromIP(ip string) string {
 }
 
 // GetAnalyticsHandler returns analytics for a specific link with date range support
+// @Summary      Get link analytics
+// @Description  Returns analytics data for a specific link including clicks, referrers, devices, and more
+// @Tags         Analytics
+// @Produce      json
+// @Param        code        path      string  true   "Short code"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD, default: 30 days ago)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD, default: today)"
+// @Success      200         {object}  models.AnalyticsSummary
+// @Failure      400         {object}  map[string]string  "Invalid query parameters"
+// @Failure      401         {object}  map[string]string  "Unauthorized"
+// @Failure      403         {object}  map[string]string  "Forbidden - not link owner"
+// @Failure      404         {object}  map[string]string  "Link not found"
+// @Failure      500         {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/analytics/{code} [get]
 func GetAnalyticsHandler(c *gin.Context) {
 	code := c.Param("code")
 	userID := c.GetString("user_id")

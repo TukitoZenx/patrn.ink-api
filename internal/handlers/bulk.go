@@ -18,6 +18,17 @@ import (
 )
 
 // BulkDeleteHandler deletes or archives multiple links
+// @Summary      Bulk delete/archive links
+// @Description  Deletes or archives multiple links at once
+// @Tags         Bulk Operations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.BulkDeleteRequest  true  "Bulk delete request"
+// @Success      200      {object}  models.BulkDeleteResponse
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Security     BearerAuth
+// @Router       /api/bulk/delete [post]
 func BulkDeleteHandler(c *gin.Context) {
 	var req models.BulkDeleteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -68,6 +79,17 @@ func BulkDeleteHandler(c *gin.Context) {
 }
 
 // BulkImportHandler imports multiple links from JSON
+// @Summary      Bulk import links
+// @Description  Imports multiple links at once from a JSON array
+// @Tags         Bulk Operations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.BulkImportRequest  true  "Bulk import request (max 100 links)"
+// @Success      200      {object}  models.BulkImportResponse
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Security     BearerAuth
+// @Router       /api/bulk/import [post]
 func BulkImportHandler(c *gin.Context) {
 	var req models.BulkImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -166,6 +188,16 @@ func BulkImportHandler(c *gin.Context) {
 }
 
 // ExportLinksHandler exports user's links as CSV or JSON
+// @Summary      Export all links
+// @Description  Exports all user's links as CSV or JSON file
+// @Tags         Bulk Operations
+// @Produce      json,text/csv
+// @Param        format  query     string  false  "Export format: csv or json (default: csv)"
+// @Success      200     {file}    file    "CSV or JSON file download"
+// @Failure      401     {object}  map[string]string  "Unauthorized"
+// @Failure      500     {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/export/links [get]
 func ExportLinksHandler(c *gin.Context) {
 	userID := c.GetString("user_id")
 	format := c.DefaultQuery("format", "csv")
@@ -238,6 +270,21 @@ func ExportLinksHandler(c *gin.Context) {
 }
 
 // ExportAnalyticsHandler exports analytics data as CSV
+// @Summary      Export link analytics
+// @Description  Exports analytics data for a specific link as CSV or JSON
+// @Tags         Analytics
+// @Produce      json,text/csv
+// @Param        code        path      string  true   "Short code"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD, default: 30 days ago)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD, default: today)"
+// @Param        format      query     string  false  "Export format: csv or json (default: csv)"
+// @Success      200         {file}    file    "CSV or JSON file download"
+// @Failure      401         {object}  map[string]string  "Unauthorized"
+// @Failure      403         {object}  map[string]string  "Forbidden - not link owner"
+// @Failure      404         {object}  map[string]string  "Link not found"
+// @Failure      500         {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/analytics/{code}/export [get]
 func ExportAnalyticsHandler(c *gin.Context) {
 	code := c.Param("code")
 	userID := c.GetString("user_id")

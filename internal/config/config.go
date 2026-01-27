@@ -48,6 +48,10 @@ type Config struct {
 	FrontendURL string
 }
 
+func Load() *Config {
+	return AppConfig
+}
+
 var AppConfig *Config
 
 func LoadConfig() error {

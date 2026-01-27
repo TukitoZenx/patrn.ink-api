@@ -45,3 +45,6 @@ vendor/
 
 # Air (hot reload)
 tmp/
+
+# Local DynamoDB data
+docker/dynamodb/*.db

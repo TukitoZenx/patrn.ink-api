@@ -17,6 +17,19 @@ import (
 )
 
 // ShortenHandler creates a new short URL
+// @Summary      Create short URL
+// @Description  Creates a new shortened URL with optional custom code, expiration, scheduling, tags, and password protection
+// @Tags         Links
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.CreateLinkRequest  true  "Link creation request"
+// @Success      201      {object}  models.CreateLinkResponse
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      409      {object}  map[string]string  "Custom code already in use"
+// @Failure      500      {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/shorten [post]
 func ShortenHandler(c *gin.Context) {
 	var req models.CreateLinkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -96,20 +109,21 @@ func ShortenHandler(c *gin.Context) {
 
 	// Create link
 	link := &models.Link{
-		ShortCode:   shortCode,
-		LongURL:     req.LongURL,
-		UserID:      userID,
-		CustomAlias: customAlias,
-		Clicks:      0,
-		CreatedAt:   time.Now(),
-		ExpiresAt:   expiresAt,
-		ScheduledAt: scheduledAt,
-		IsActive:    true,
-		IsArchived:  false,
-		Tags:        req.Tags,
-		Password:    passwordHash,
-		Title:       req.Title,
-		Description: req.Description,
+		ShortCode:       shortCode,
+		LongURL:         req.LongURL,
+		UserID:          userID,
+		CustomAlias:     customAlias,
+		Clicks:          0,
+		CreatedAt:       time.Now(),
+		ExpiresAt:       expiresAt,
+		ScheduledAt:     scheduledAt,
+		IsActive:        true,
+		IsArchived:      false,
+		Tags:            req.Tags,
+		Password:        passwordHash,
+		Title:           req.Title,
+		Description:     req.Description,
+		AgeVerification: models.AgeVerification(req.AgeVerification),
 	}
 
 	if err := storage.SaveLink(link); err != nil {
@@ -141,6 +155,16 @@ func ShortenHandler(c *gin.Context) {
 }
 
 // RedirectHandler handles short URL redirects
+// @Summary      Redirect to long URL
+// @Description  Redirects to the original URL. Returns 403 if password or age verification is required.
+// @Tags         Redirect
+// @Produce      json
+// @Param        code  path      string  true  "Short code"
+// @Success      301   {string}  string  "Redirect to long URL"
+// @Failure      403   {object}  map[string]interface{}  "Password or age verification required"
+// @Failure      404   {object}  map[string]string  "URL not found"
+// @Failure      410   {object}  map[string]string  "Link expired, archived, or deactivated"
+// @Router       /{code} [get]
 func RedirectHandler(c *gin.Context) {
 	code := c.Param("code")
 
@@ -186,6 +210,24 @@ func RedirectHandler(c *gin.Context) {
 		return
 	}
 
+	// Check if age verification required
+	if link.AgeVerification > 0 {
+		ageLabels := map[models.AgeVerification]string{
+			models.AgeVerification13Plus: "13+",
+			models.AgeVerification18Plus: "18+",
+			models.AgeVerification21Plus: "21+",
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":        "Age verification required",
+			"age_required": ageLabels[link.AgeVerification],
+			"age_level":    int(link.AgeVerification),
+			"verify_url":   config.AppConfig.BaseURL + "/" + code + "/verify-age",
+			"title":        link.Title,
+			"description":  link.Description,
+		})
+		return
+	}
+
 	// Record analytics and increment counter
 	RecordAnalytics(c, code)
 	_ = storage.IncrementClicks(code)
@@ -198,6 +240,18 @@ func RedirectHandler(c *gin.Context) {
 }
 
 // VerifyPasswordHandler verifies password and redirects
+// @Summary      Verify link password
+// @Description  Verifies the password for a password-protected link and returns the redirect URL
+// @Tags         Redirect
+// @Accept       json
+// @Produce      json
+// @Param        code     path      string                      true  "Short code"
+// @Param        request  body      models.PasswordVerifyRequest  true  "Password verification request"
+// @Success      200      {object}  map[string]string  "redirect_url"
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      401      {object}  map[string]string  "Invalid password"
+// @Failure      404      {object}  map[string]string  "URL not found"
+// @Router       /{code}/verify [post]
 func VerifyPasswordHandler(c *gin.Context) {
 	code := c.Param("code")
 
@@ -233,7 +287,75 @@ func VerifyPasswordHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"redirect_url": link.LongURL})
 }
 
+// VerifyAgeHandler verifies age confirmation and redirects
+// @Summary      Verify age for age-gated link
+// @Description  Confirms the user's age and returns the redirect URL for age-restricted content
+// @Tags         Redirect
+// @Accept       json
+// @Produce      json
+// @Param        code     path      string  true  "Short code"
+// @Param        request  body      object{confirmed=bool,age_level=int}  true  "Age verification request"
+// @Success      200      {object}  map[string]string  "redirect_url"
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      403      {object}  map[string]string  "Age requirement not met"
+// @Failure      404      {object}  map[string]string  "URL not found"
+// @Router       /{code}/verify-age [post]
+func VerifyAgeHandler(c *gin.Context) {
+	code := c.Param("code")
+
+	var req struct {
+		Confirmed bool `json:"confirmed" binding:"required"`
+		AgeLevel  int  `json:"age_level" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Age confirmation is required"})
+		return
+	}
+
+	if !req.Confirmed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Age confirmation not provided"})
+		return
+	}
+
+	link, err := storage.GetLink(code)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
+		return
+	}
+
+	// Verify the age level matches what's required
+	if req.AgeLevel < int(link.AgeVerification) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Age requirement not met"})
+		return
+	}
+
+	// Age confirmed - record analytics and return redirect URL
+	RecordAnalytics(c, code)
+	_ = storage.IncrementClicks(code)
+	middleware.IncRedirects()
+
+	c.JSON(http.StatusOK, gin.H{"redirect_url": link.LongURL})
+}
+
 // GetLinksHandler returns all links for the authenticated user with search and pagination
+// @Summary      List user links
+// @Description  Returns all links for the authenticated user with optional search, filtering, and pagination
+// @Tags         Links
+// @Produce      json
+// @Param        search      query     string   false  "Search in URL, code, or title"
+// @Param        tags        query     []string false  "Filter by tags"
+// @Param        page        query     int      false  "Page number (default: 1)"
+// @Param        limit       query     int      false  "Items per page (default: 20, max: 100)"
+// @Param        sort_by     query     string   false  "Sort by: clicks, created_at, expires_at"
+// @Param        sort_order  query     string   false  "Sort order: asc, desc"
+// @Param        archived    query     bool     false  "Filter by archived status"
+// @Success      200         {object}  models.PaginatedLinks
+// @Failure      400         {object}  map[string]string  "Invalid query parameters"
+// @Failure      401         {object}  map[string]string  "Unauthorized"
+// @Failure      500         {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/links [get]
 func GetLinksHandler(c *gin.Context) {
 	userID := c.GetString("user_id")
 
@@ -271,6 +393,17 @@ func GetLinksHandler(c *gin.Context) {
 }
 
 // GetLinkDetailsHandler returns details for a specific link
+// @Summary      Get link details
+// @Description  Returns detailed information about a specific link owned by the user
+// @Tags         Links
+// @Produce      json
+// @Param        code  path      string  true  "Short code"
+// @Success      200   {object}  models.Link
+// @Failure      401   {object}  map[string]string  "Unauthorized"
+// @Failure      403   {object}  map[string]string  "Forbidden - not link owner"
+// @Failure      404   {object}  map[string]string  "Link not found"
+// @Security     BearerAuth
+// @Router       /api/links/{code} [get]
 func GetLinkDetailsHandler(c *gin.Context) {
 	code := c.Param("code")
 	userID := c.GetString("user_id")
@@ -291,6 +424,17 @@ func GetLinkDetailsHandler(c *gin.Context) {
 }
 
 // DeleteLinkHandler deletes a link
+// @Summary      Delete link
+// @Description  Permanently deletes a link owned by the user
+// @Tags         Links
+// @Produce      json
+// @Param        code  path      string  true  "Short code"
+// @Success      200   {object}  map[string]string  "Success message"
+// @Failure      401   {object}  map[string]string  "Unauthorized"
+// @Failure      403   {object}  map[string]string  "Forbidden - not link owner"
+// @Failure      500   {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/links/{code} [delete]
 func DeleteLinkHandler(c *gin.Context) {
 	code := c.Param("code")
 	userID := c.GetString("user_id")
@@ -309,6 +453,21 @@ func DeleteLinkHandler(c *gin.Context) {
 }
 
 // UpdateLinkHandler updates a link's properties
+// @Summary      Update link
+// @Description  Updates properties of a link owned by the user
+// @Tags         Links
+// @Accept       json
+// @Produce      json
+// @Param        code     path      string                    true  "Short code"
+// @Param        request  body      models.UpdateLinkRequest  true  "Update request"
+// @Success      200      {object}  models.Link
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      403      {object}  map[string]string  "Forbidden - not link owner"
+// @Failure      404      {object}  map[string]string  "Link not found"
+// @Failure      500      {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/links/{code} [put]
 func UpdateLinkHandler(c *gin.Context) {
 	code := c.Param("code")
 	userID := c.GetString("user_id")

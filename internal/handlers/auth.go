@@ -52,6 +52,11 @@ func InitOAuth() {
 }
 
 // GoogleLoginHandler redirects user to Google OAuth consent page
+// @Summary      Google OAuth login
+// @Description  Redirects to Google OAuth consent page for authentication
+// @Tags         Authentication
+// @Success      307  {string}  string  "Redirect to Google OAuth"
+// @Router       /auth/google/login [get]
 func GoogleLoginHandler(c *gin.Context) {
 	// Generate state token for CSRF protection
 	state := generateStateToken()
@@ -64,6 +69,16 @@ func GoogleLoginHandler(c *gin.Context) {
 }
 
 // GoogleCallbackHandler handles OAuth callback from Google
+// @Summary      Google OAuth callback
+// @Description  Handles the OAuth callback from Google, creates/updates user, and returns JWT
+// @Tags         Authentication
+// @Produce      json
+// @Param        state  query     string  true  "OAuth state token"
+// @Param        code   query     string  true  "Authorization code"
+// @Success      307    {string}  string  "Redirect with JWT token"
+// @Failure      400    {object}  map[string]string  "Invalid state token"
+// @Failure      500    {object}  map[string]string  "Server error"
+// @Router       /auth/google/callback [get]
 func GoogleCallbackHandler(c *gin.Context) {
 	// Verify state token
 	state := c.Query("state")
@@ -118,6 +133,12 @@ func GoogleCallbackHandler(c *gin.Context) {
 }
 
 // GitHubLoginHandler redirects user to GitHub OAuth consent page
+// @Summary      GitHub OAuth login
+// @Description  Redirects to GitHub OAuth consent page for authentication
+// @Tags         Authentication
+// @Success      307  {string}  string  "Redirect to GitHub OAuth"
+// @Failure      501  {object}  map[string]string  "GitHub login not configured"
+// @Router       /auth/github/login [get]
 func GitHubLoginHandler(c *gin.Context) {
 	if config.AppConfig.GitHubClientID == "" {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "GitHub login not configured"})
@@ -135,6 +156,16 @@ func GitHubLoginHandler(c *gin.Context) {
 }
 
 // GitHubCallbackHandler handles OAuth callback from GitHub
+// @Summary      GitHub OAuth callback
+// @Description  Handles the OAuth callback from GitHub, creates/updates user, and returns JWT
+// @Tags         Authentication
+// @Produce      json
+// @Param        state  query     string  true  "OAuth state token"
+// @Param        code   query     string  true  "Authorization code"
+// @Success      307    {string}  string  "Redirect with JWT token"
+// @Failure      400    {object}  map[string]string  "Invalid state token"
+// @Failure      500    {object}  map[string]string  "Server error"
+// @Router       /auth/github/callback [get]
 func GitHubCallbackHandler(c *gin.Context) {
 	// Verify state token
 	state := c.Query("state")
@@ -319,6 +350,15 @@ func generateStateToken() string {
 }
 
 // GetCurrentUserHandler returns the current authenticated user
+// @Summary      Get current user
+// @Description  Returns the currently authenticated user's profile information
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  models.User
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      404  {object}  map[string]string  "User not found"
+// @Security     BearerAuth
+// @Router       /api/me [get]
 func GetCurrentUserHandler(c *gin.Context) {
 	userID := c.GetString("user_id")
 

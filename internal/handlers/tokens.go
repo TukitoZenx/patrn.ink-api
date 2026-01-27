@@ -40,6 +40,18 @@ func hashToken(token string) string {
 }
 
 // CreateAPITokenHandler creates a new personal API token
+// @Summary      Create API token
+// @Description  Creates a new personal API token with specified scopes for programmatic access
+// @Tags         API Tokens
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.CreateAPITokenRequest  true  "Token creation request"
+// @Success      201      {object}  models.CreateAPITokenResponse
+// @Failure      400      {object}  map[string]string  "Invalid request or scope"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      500      {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/tokens [post]
 func CreateAPITokenHandler(c *gin.Context) {
 	var req models.CreateAPITokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -113,6 +125,15 @@ func CreateAPITokenHandler(c *gin.Context) {
 }
 
 // ListAPITokensHandler returns all API tokens for the authenticated user
+// @Summary      List API tokens
+// @Description  Returns all API tokens for the authenticated user
+// @Tags         API Tokens
+// @Produce      json
+// @Success      200  {object}  map[string][]models.APIToken
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      500  {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/tokens [get]
 func ListAPITokensHandler(c *gin.Context) {
 	userID := c.GetString("user_id")
 
@@ -127,6 +148,18 @@ func ListAPITokensHandler(c *gin.Context) {
 }
 
 // RevokeAPITokenHandler revokes an API token
+// @Summary      Revoke API token
+// @Description  Revokes (deactivates) an API token permanently
+// @Tags         API Tokens
+// @Produce      json
+// @Param        id   path      string  true  "Token ID"
+// @Success      200  {object}  map[string]string  "Success message"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden - not token owner"
+// @Failure      404  {object}  map[string]string  "Token not found"
+// @Failure      500  {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/tokens/{id} [delete]
 func RevokeAPITokenHandler(c *gin.Context) {
 	tokenID := c.Param("id")
 	userID := c.GetString("user_id")
@@ -150,6 +183,20 @@ func RevokeAPITokenHandler(c *gin.Context) {
 }
 
 // UpdateAPITokenRateLimitHandler updates the rate limit for an API token
+// @Summary      Update token rate limit
+// @Description  Updates the rate limit (requests per minute) for an API token
+// @Tags         API Tokens
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string  true  "Token ID"
+// @Param        request  body      object{rate_limit=int}  true  "Rate limit (1-1000)"
+// @Success      200      {object}  map[string]string  "Success message"
+// @Failure      400      {object}  map[string]string  "Invalid request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      403      {object}  map[string]string  "Forbidden - not token owner"
+// @Failure      500      {object}  map[string]string  "Server error"
+// @Security     BearerAuth
+// @Router       /api/tokens/{id}/rate-limit [put]
 func UpdateAPITokenRateLimitHandler(c *gin.Context) {
 	tokenID := c.Param("id")
 	userID := c.GetString("user_id")

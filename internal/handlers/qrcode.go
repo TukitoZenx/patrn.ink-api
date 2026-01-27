@@ -15,6 +15,16 @@ import (
 )
 
 // QRCodeHandler generates QR code for a short URL
+// @Summary      Generate QR code
+// @Description  Generates a QR code PNG image for the short URL
+// @Tags         QR Code
+// @Produce      image/png
+// @Param        code  path      string  true  "Short code"
+// @Success      200   {file}    file    "PNG image"
+// @Failure      404   {object}  map[string]string  "URL not found"
+// @Failure      410   {object}  map[string]string  "Link has expired"
+// @Failure      500   {object}  map[string]string  "Server error"
+// @Router       /{code}/qr [get]
 func QRCodeHandler(c *gin.Context) {
 	code := c.Param("code")
 

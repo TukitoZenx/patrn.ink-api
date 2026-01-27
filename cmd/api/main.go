@@ -11,6 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
 	"patrn.ink/internal/config"
@@ -18,7 +20,34 @@ import (
 	"patrn.ink/internal/logger"
 	"patrn.ink/internal/middleware"
 	"patrn.ink/internal/storage"
+
+	_ "patrn.ink/docs" // Import generated docs
 )
+
+// @title           Patrn.ink URL Shortener API
+// @version         1.0
+// @description     A powerful URL shortening service with analytics, QR codes, and link management.
+// @termsOfService  https://patrn.ink/terms
+
+// @contact.name   API Support
+// @contact.url    https://patrn.ink/support
+// @contact.email  support@patrn.ink
+
+// @license.name  MIT
+// @license.url   https://opensource.org/licenses/MIT
+
+// @host      localhost:8080
+// @BasePath  /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT Bearer token or API token (prefix with "Bearer ")
+
+// @securityDefinitions.apikey APIKeyAuth
+// @in header
+// @name X-API-Key
+// @description API token for programmatic access
 
 func main() {
 	// Load configuration
@@ -68,6 +97,9 @@ func main() {
 
 	// Health check
 	r.GET("/health", handlers.HealthCheckHandler)
+
+	// Swagger documentation
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Prometheus metrics
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
@@ -124,6 +156,9 @@ func main() {
 
 	// Password verification for protected links
 	r.POST("/:code/verify", handlers.VerifyPasswordHandler)
+
+	// Age verification for adult content
+	r.POST("/:code/verify-age", handlers.VerifyAgeHandler)
 
 	// Link preview by code
 	r.GET("/:code/preview", handlers.GetLinkPreviewByCodeHandler)
