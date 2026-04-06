@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -107,6 +108,16 @@ func ShortenHandler(c *gin.Context) {
 		passwordHash = string(hash)
 	}
 
+	rotationTargets, err := validateRotationTargets(req.RotationTargets)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := ensurePrimaryDestinationIsUnique(req.LongURL, rotationTargets); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	// Create link
 	link := &models.Link{
 		ShortCode:       shortCode,
@@ -124,12 +135,20 @@ func ShortenHandler(c *gin.Context) {
 		Title:           req.Title,
 		Description:     req.Description,
 		AgeVerification: models.AgeVerification(req.AgeVerification),
+		RotationTargets: rotationTargets,
 	}
 
 	if err := storage.SaveLink(link); err != nil {
 		logger.Logger.Error("Failed to save link", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create short URL"})
 		return
+	}
+
+	if err := refreshLinkHealth(link); err != nil {
+		logger.Logger.Warn("Failed to refresh link health after creation",
+			zap.String("code", shortCode),
+			zap.Error(err),
+		)
 	}
 
 	// Build response
@@ -167,63 +186,150 @@ func ShortenHandler(c *gin.Context) {
 // @Router       /{code} [get]
 func RedirectHandler(c *gin.Context) {
 	code := c.Param("code")
+	htmlRequest := prefersHTML(c)
 
 	// Fallback to database
 	link, err := storage.GetLink(code)
 	if err != nil {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusNotFound,
+				code,
+				"Link not found",
+				"This short link does not exist or may have been removed.",
+				"Check the link for typos or ask the sender to share it again.",
+				nil,
+			)
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
 		return
 	}
 
 	// Check if link is active
 	if !link.IsActive {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusGone,
+				code,
+				"This link has been deactivated",
+				"The destination behind this short link is no longer available.",
+				"Reach out to the link owner if you expected this destination to still be active.",
+				link,
+			)
+			return
+		}
 		c.JSON(http.StatusGone, gin.H{"error": "This link has been deactivated"})
 		return
 	}
 
 	// Check if archived
 	if link.IsArchived {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusGone,
+				code,
+				"This link has been archived",
+				"This short link has been retired and is no longer open to visitors.",
+				"Archived links stay organized for teams, but they are no longer available for public access.",
+				link,
+			)
+			return
+		}
 		c.JSON(http.StatusGone, gin.H{"error": "This link has been archived"})
 		return
 	}
 
 	// Check if expired
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(time.Now()) {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusGone,
+				code,
+				"This link has expired",
+				"This destination was available for a limited time and is no longer active.",
+				"Expiration helps teams run time-bound campaigns without leaving old links open indefinitely.",
+				link,
+			)
+			return
+		}
 		c.JSON(http.StatusGone, gin.H{"error": "This link has expired"})
 		return
 	}
 
 	// Check if scheduled (not yet active)
 	if link.ScheduledAt != nil && link.ScheduledAt.After(time.Now()) {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusNotFound,
+				code,
+				"This link is not live yet",
+				"This destination is scheduled to go live later, so access is not available yet.",
+				"Scheduled launch: "+formatPublicTime(link.ScheduledAt),
+				link,
+			)
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "This link is not yet active"})
 		return
 	}
 
-	// Check if password protected
+	ageVerified := hasValidAgeProof(c, code, link.AgeVerification)
+
+	if link.AgeVerification > 0 && !ageVerified {
+		ageLabel := ageLabelForLevel(link.AgeVerification)
+		ageBody := "This destination is age-gated. Confirm your age first."
+		if link.Password != "" {
+			ageBody = "This destination is age-gated and password protected. Confirm your age first, then you will unlock it with the password."
+		}
+		if htmlRequest {
+			renderPublicPage(c, http.StatusForbidden, buildPublicPageData(code, link, publicPageData{
+				PageTitle:    "Age confirmation required · patrn.ink",
+				Eyebrow:      "Protected link",
+				Heading:      "Confirm your age before continuing",
+				Body:         ageBody,
+				Detail:       "Required age: " + ageLabel,
+				ActionURL:    config.AppConfig.BaseURL + "/" + code + "/verify-age",
+				ActionLabel:  "I confirm I am " + ageLabel + " or older",
+				ShowAgeForm:  true,
+				AgeLabel:     ageLabel,
+				AgeLevel:     int(link.AgeVerification),
+				SecondaryURL: config.AppConfig.FrontendURL,
+			}))
+			return
+		}
+		response := gin.H{
+			"error":         "Age verification required",
+			"age_required":  ageLabel,
+			"age_level":     int(link.AgeVerification),
+			"verify_url":    config.AppConfig.BaseURL + "/" + code + "/verify-age",
+			"title":         link.Title,
+			"description":   link.Description,
+			"gate_sequence": []string{"age"},
+		}
+		if link.Password != "" {
+			response["password_required"] = true
+			response["gate_sequence"] = []string{"age", "password"}
+		}
+		c.JSON(http.StatusForbidden, response)
+		return
+	}
+
 	if link.Password != "" {
+		if htmlRequest {
+			renderPasswordGate(c, code, link, "", http.StatusForbidden)
+			return
+		}
 		// Return a special response indicating password is required
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":             "Password required",
 			"password_required": true,
 			"verify_url":        config.AppConfig.BaseURL + "/" + code + "/verify",
-		})
-		return
-	}
-
-	// Check if age verification required
-	if link.AgeVerification > 0 {
-		ageLabels := map[models.AgeVerification]string{
-			models.AgeVerification13Plus: "13+",
-			models.AgeVerification18Plus: "18+",
-			models.AgeVerification21Plus: "21+",
-		}
-		c.JSON(http.StatusForbidden, gin.H{
-			"error":        "Age verification required",
-			"age_required": ageLabels[link.AgeVerification],
-			"age_level":    int(link.AgeVerification),
-			"verify_url":   config.AppConfig.BaseURL + "/" + code + "/verify-age",
-			"title":        link.Title,
-			"description":  link.Description,
 		})
 		return
 	}
@@ -234,9 +340,10 @@ func RedirectHandler(c *gin.Context) {
 	middleware.IncRedirects()
 
 	// Refresh cache
-	_ = storage.SaveToCache(code, link.LongURL)
+	redirectURL := selectRedirectDestination(link)
+	_ = storage.SaveToCache(code, redirectURL)
 
-	c.Redirect(http.StatusMovedPermanently, link.LongURL)
+	c.Redirect(http.StatusMovedPermanently, redirectURL)
 }
 
 // VerifyPasswordHandler verifies password and redirects
@@ -254,27 +361,94 @@ func RedirectHandler(c *gin.Context) {
 // @Router       /{code}/verify [post]
 func VerifyPasswordHandler(c *gin.Context) {
 	code := c.Param("code")
+	htmlRequest := prefersHTML(c) || isHTMLFormPost(c)
 
 	var req models.PasswordVerifyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if isHTMLFormPost(c) {
+		req.Password = c.PostForm("password")
+	}
+	if req.Password == "" {
+		if err := c.ShouldBindJSON(&req); err != nil && !isHTMLFormPost(c) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Password is required"})
+			return
+		}
+	}
+	if req.Password == "" {
+		if htmlRequest {
+			link, _ := storage.GetLink(code)
+			renderPasswordGate(c, code, link, "Enter the password to continue.", http.StatusBadRequest)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Password is required"})
 		return
 	}
 
 	link, err := storage.GetLink(code)
 	if err != nil {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusNotFound,
+				code,
+				"Link not found",
+				"This short link does not exist or may have been removed.",
+				"Check the link and try again.",
+				nil,
+			)
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
 		return
 	}
 
 	if link.Password == "" {
 		// No password required, just redirect
-		c.JSON(http.StatusOK, gin.H{"redirect_url": link.LongURL})
+		redirectURL := selectRedirectDestination(link)
+		if htmlRequest {
+			c.Redirect(http.StatusFound, redirectURL)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"redirect_url": redirectURL})
+		return
+	}
+
+	if link.AgeVerification > 0 && !hasValidAgeProof(c, code, link.AgeVerification) {
+		ageLabel := ageLabelForLevel(link.AgeVerification)
+		if htmlRequest {
+			renderPublicPage(c, http.StatusForbidden, buildPublicPageData(code, link, publicPageData{
+				PageTitle:    "Age confirmation required · patrn.ink",
+				Eyebrow:      "Protected link",
+				Heading:      "Confirm your age before entering the password",
+				Body:         "This destination requires age confirmation before the password step can unlock it.",
+				Detail:       "Required age: " + ageLabel,
+				ActionURL:    config.AppConfig.BaseURL + "/" + code + "/verify-age",
+				ActionLabel:  "I confirm I am " + ageLabel + " or older",
+				ShowAgeForm:  true,
+				AgeLabel:     ageLabel,
+				AgeLevel:     int(link.AgeVerification),
+				SecondaryURL: config.AppConfig.FrontendURL,
+			}))
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":             "Age verification required",
+			"password_required": true,
+			"age_required":      ageLabel,
+			"age_level":         int(link.AgeVerification),
+			"verify_url":        config.AppConfig.BaseURL + "/" + code + "/verify-age",
+			"gate_sequence":     []string{"age", "password"},
+			"title":             link.Title,
+			"description":       link.Description,
+		})
 		return
 	}
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(link.Password), []byte(req.Password)); err != nil {
+		if htmlRequest {
+			renderPasswordGate(c, code, link, "That password did not match. Try again.", http.StatusUnauthorized)
+			return
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
 		return
 	}
@@ -283,8 +457,14 @@ func VerifyPasswordHandler(c *gin.Context) {
 	RecordAnalytics(c, code)
 	_ = storage.IncrementClicks(code)
 	middleware.IncRedirects()
+	redirectURL := selectRedirectDestination(link)
 
-	c.JSON(http.StatusOK, gin.H{"redirect_url": link.LongURL})
+	if htmlRequest {
+		c.Redirect(http.StatusFound, redirectURL)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"redirect_url": redirectURL})
 }
 
 // VerifyAgeHandler verifies age confirmation and redirects
@@ -302,31 +482,86 @@ func VerifyPasswordHandler(c *gin.Context) {
 // @Router       /{code}/verify-age [post]
 func VerifyAgeHandler(c *gin.Context) {
 	code := c.Param("code")
+	htmlRequest := prefersHTML(c) || isHTMLFormPost(c)
 
 	var req struct {
 		Confirmed bool `json:"confirmed" binding:"required"`
 		AgeLevel  int  `json:"age_level" binding:"required"`
 	}
 
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if isHTMLFormPost(c) {
+		req.Confirmed = c.PostForm("confirmed") == "true" || c.PostForm("confirmed") == "on"
+		_, _ = fmt.Sscanf(c.PostForm("age_level"), "%d", &req.AgeLevel)
+	}
+	if req.AgeLevel == 0 {
+		if err := c.ShouldBindJSON(&req); err != nil && !isHTMLFormPost(c) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Age confirmation is required"})
+			return
+		}
+	}
+
+	link, err := storage.GetLink(code)
+	if err != nil {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusNotFound,
+				code,
+				"Link not found",
+				"This short link does not exist or may have been removed.",
+				"Check the link and try again.",
+				nil,
+			)
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
+		return
+	}
+
+	ageLabel := ageLabelForLevel(link.AgeVerification)
+
+	if req.AgeLevel == 0 {
+		if htmlRequest {
+			renderAgeGate(c, code, link, ageLabel, "Confirm your age to continue.", http.StatusBadRequest)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Age confirmation is required"})
 		return
 	}
 
 	if !req.Confirmed {
+		if htmlRequest {
+			renderAgeGate(c, code, link, ageLabel, "You need to confirm your age before continuing.", http.StatusForbidden)
+			return
+		}
 		c.JSON(http.StatusForbidden, gin.H{"error": "Age confirmation not provided"})
-		return
-	}
-
-	link, err := storage.GetLink(code)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
 		return
 	}
 
 	// Verify the age level matches what's required
 	if req.AgeLevel < int(link.AgeVerification) {
+		if htmlRequest {
+			renderAgeGate(c, code, link, ageLabel, "This destination requires a higher age confirmation.", http.StatusForbidden)
+			return
+		}
 		c.JSON(http.StatusForbidden, gin.H{"error": "Age requirement not met"})
+		return
+	}
+
+	issueAgeProof(c, code, link.AgeVerification)
+
+	if link.Password != "" {
+		if htmlRequest {
+			renderPasswordGate(c, code, link, "", http.StatusForbidden)
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":             "Password required",
+			"password_required": true,
+			"verify_url":        config.AppConfig.BaseURL + "/" + code + "/verify",
+			"title":             link.Title,
+			"description":       link.Description,
+		})
 		return
 	}
 
@@ -334,8 +569,14 @@ func VerifyAgeHandler(c *gin.Context) {
 	RecordAnalytics(c, code)
 	_ = storage.IncrementClicks(code)
 	middleware.IncRedirects()
+	redirectURL := selectRedirectDestination(link)
 
-	c.JSON(http.StatusOK, gin.H{"redirect_url": link.LongURL})
+	if htmlRequest {
+		c.Redirect(http.StatusFound, redirectURL)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"redirect_url": redirectURL})
 }
 
 // GetLinksHandler returns all links for the authenticated user with search and pagination
@@ -389,6 +630,12 @@ func GetLinksHandler(c *gin.Context) {
 		return
 	}
 
+	for _, link := range result.Links {
+		if shouldRefreshHealth(link) {
+			refreshLinkHealthAsync(link.ShortCode)
+		}
+	}
+
 	c.JSON(http.StatusOK, result)
 }
 
@@ -418,6 +665,10 @@ func GetLinkDetailsHandler(c *gin.Context) {
 	if link.UserID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
 		return
+	}
+
+	if shouldRefreshHealth(link) {
+		refreshLinkHealthAsync(link.ShortCode)
 	}
 
 	c.JSON(http.StatusOK, link)
@@ -537,11 +788,36 @@ func UpdateLinkHandler(c *gin.Context) {
 		link.IsArchived = *req.IsArchived
 	}
 
+	if req.RotationTargets != nil {
+		rotationTargets, err := validateRotationTargets(req.RotationTargets)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		primaryURL := link.LongURL
+		if req.LongURL != "" {
+			primaryURL = req.LongURL
+		}
+		if err := ensurePrimaryDestinationIsUnique(primaryURL, rotationTargets); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		link.RotationTargets = rotationTargets
+		link.RotationCursor = 0
+	}
+
 	// Save updated link
 	if err := storage.SaveLink(link); err != nil {
 		logger.Logger.Error("Failed to update link", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update link"})
 		return
+	}
+
+	if err := refreshLinkHealth(link); err != nil {
+		logger.Logger.Warn("Failed to refresh link health after update",
+			zap.String("code", code),
+			zap.Error(err),
+		)
 	}
 
 	logger.Logger.Info("Link updated", zap.String("code", code), zap.String("user", userID))

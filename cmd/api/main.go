@@ -104,6 +104,9 @@ func main() {
 	// Prometheus metrics
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
+	// Static brand assets for browser-facing public pages
+	r.Static("/brand", "./static/brand")
+
 	// Authentication routes
 	auth := r.Group("/auth")
 	{
@@ -128,6 +131,7 @@ func main() {
 		api.POST("/shorten", middleware.ScopeMiddleware("links:write"), handlers.ShortenHandler)
 		api.GET("/links", middleware.ScopeMiddleware("links:read"), handlers.GetLinksHandler)
 		api.GET("/links/:code", middleware.ScopeMiddleware("links:read"), handlers.GetLinkDetailsHandler)
+		api.POST("/links/:code/health-check", middleware.ScopeMiddleware("links:read"), handlers.RefreshLinkHealthHandler)
 		api.PUT("/links/:code", middleware.ScopeMiddleware("links:write"), handlers.UpdateLinkHandler)
 		api.DELETE("/links/:code", middleware.ScopeMiddleware("links:write"), handlers.DeleteLinkHandler)
 

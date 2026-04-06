@@ -14,21 +14,57 @@ type User struct {
 
 // Link represents a shortened URL
 type Link struct {
-	ShortCode       string          `json:"short_code"`
-	LongURL         string          `json:"long_url"`
-	UserID          string          `json:"user_id"`
-	CustomAlias     bool            `json:"custom_alias"`
-	Clicks          int64           `json:"clicks"`
-	CreatedAt       time.Time       `json:"created_at"`
-	ExpiresAt       *time.Time      `json:"expires_at,omitempty"`
-	ScheduledAt     *time.Time      `json:"scheduled_at,omitempty"` // Link goes live at this time
-	IsActive        bool            `json:"is_active"`
-	Tags            []string        `json:"tags,omitempty"`        // Categories/tags for organization
-	Password        string          `json:"password,omitempty"`    // Password hash for protected links
-	IsArchived      bool            `json:"is_archived"`           // Soft archive (not deleted)
-	Title           string          `json:"title,omitempty"`       // Optional link title
-	Description     string          `json:"description,omitempty"` // Optional description
-	AgeVerification AgeVerification `json:"age_verification"`      // Age gate requirement
+	ShortCode       string           `json:"short_code"`
+	LongURL         string           `json:"long_url"`
+	UserID          string           `json:"user_id"`
+	CustomAlias     bool             `json:"custom_alias"`
+	Clicks          int64            `json:"clicks"`
+	CreatedAt       time.Time        `json:"created_at"`
+	ExpiresAt       *time.Time       `json:"expires_at,omitempty"`
+	ScheduledAt     *time.Time       `json:"scheduled_at,omitempty"` // Link goes live at this time
+	IsActive        bool             `json:"is_active"`
+	Tags            []string         `json:"tags,omitempty"`        // Categories/tags for organization
+	Password        string           `json:"password,omitempty"`    // Password hash for protected links
+	IsArchived      bool             `json:"is_archived"`           // Soft archive (not deleted)
+	Title           string           `json:"title,omitempty"`       // Optional link title
+	Description     string           `json:"description,omitempty"` // Optional description
+	AgeVerification AgeVerification  `json:"age_verification"`      // Age gate requirement
+	RotationTargets []RotationTarget `json:"rotation_targets,omitempty"`
+	RotationCursor  int              `json:"-"`
+	PrimaryHealth   DestinationCheck `json:"primary_health,omitempty"`
+	HealthStatus    LinkHealthStatus `json:"health_status,omitempty"`
+}
+
+type RotationTarget struct {
+	URL           string     `json:"url"`
+	Label         string     `json:"label,omitempty"`
+	IsActive      bool       `json:"is_active"`
+	Status        string     `json:"status,omitempty"`
+	StatusCode    int        `json:"status_code,omitempty"`
+	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+}
+
+type RotationTargetInput struct {
+	URL      string `json:"url" binding:"required,url"`
+	Label    string `json:"label,omitempty"`
+	IsActive *bool  `json:"is_active,omitempty"`
+}
+
+type DestinationCheck struct {
+	Status        string     `json:"status,omitempty"`
+	StatusCode    int        `json:"status_code,omitempty"`
+	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+}
+
+type LinkHealthStatus struct {
+	Status              string     `json:"status,omitempty"`
+	LastCheckedAt       *time.Time `json:"last_checked_at,omitempty"`
+	HealthyDestinations int        `json:"healthy_destinations,omitempty"`
+	FailingDestinations int        `json:"failing_destinations,omitempty"`
+	TotalDestinations   int        `json:"total_destinations,omitempty"`
+	NeedsAttention      bool       `json:"needs_attention,omitempty"`
 }
 
 // AnalyticsEvent represents a click event
@@ -64,15 +100,16 @@ type TimelinePoint struct {
 
 // CreateLinkRequest represents the request to create a short URL
 type CreateLinkRequest struct {
-	LongURL         string   `json:"long_url" binding:"required,url"`
-	CustomCode      string   `json:"custom_code,omitempty"`
-	ExpiresIn       int      `json:"expires_in,omitempty"`   // hours
-	ScheduledAt     string   `json:"scheduled_at,omitempty"` // ISO 8601 datetime
-	Tags            []string `json:"tags,omitempty"`
-	Password        string   `json:"password,omitempty"`
-	Title           string   `json:"title,omitempty"`
-	Description     string   `json:"description,omitempty"`
-	AgeVerification int      `json:"age_verification,omitempty"` // 0=none, 1=13+, 2=18+, 3=21+
+	LongURL         string                `json:"long_url" binding:"required,url"`
+	CustomCode      string                `json:"custom_code,omitempty"`
+	ExpiresIn       int                   `json:"expires_in,omitempty"`   // hours
+	ScheduledAt     string                `json:"scheduled_at,omitempty"` // ISO 8601 datetime
+	Tags            []string              `json:"tags,omitempty"`
+	Password        string                `json:"password,omitempty"`
+	Title           string                `json:"title,omitempty"`
+	Description     string                `json:"description,omitempty"`
+	AgeVerification int                   `json:"age_verification,omitempty"` // 0=none, 1=13+, 2=18+, 3=21+
+	RotationTargets []RotationTargetInput `json:"rotation_targets,omitempty"`
 }
 
 // CreateLinkResponse represents the response after creating a short URL
@@ -88,14 +125,15 @@ type CreateLinkResponse struct {
 
 // UpdateLinkRequest represents the request to update a link
 type UpdateLinkRequest struct {
-	LongURL     string   `json:"long_url,omitempty"`
-	ExpiresIn   int      `json:"expires_in,omitempty"`
-	ScheduledAt string   `json:"scheduled_at,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Password    string   `json:"password,omitempty"`
-	Title       string   `json:"title,omitempty"`
-	Description string   `json:"description,omitempty"`
-	IsArchived  *bool    `json:"is_archived,omitempty"`
+	LongURL         string                `json:"long_url,omitempty"`
+	ExpiresIn       int                   `json:"expires_in,omitempty"`
+	ScheduledAt     string                `json:"scheduled_at,omitempty"`
+	Tags            []string              `json:"tags,omitempty"`
+	Password        string                `json:"password,omitempty"`
+	Title           string                `json:"title,omitempty"`
+	Description     string                `json:"description,omitempty"`
+	IsArchived      *bool                 `json:"is_archived,omitempty"`
+	RotationTargets []RotationTargetInput `json:"rotation_targets,omitempty"`
 }
 
 // LinksQuery represents query parameters for listing links

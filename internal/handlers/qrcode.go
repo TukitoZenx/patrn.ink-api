@@ -27,16 +27,41 @@ import (
 // @Router       /{code}/qr [get]
 func QRCodeHandler(c *gin.Context) {
 	code := c.Param("code")
+	htmlRequest := prefersHTML(c)
 
 	// Check if link exists
 	link, err := storage.GetLink(code)
 	if err != nil || !link.IsActive {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusNotFound,
+				code,
+				"QR code unavailable",
+				"This QR code cannot be generated because the short link is not available.",
+				"Check the link code or ask the link owner to confirm it is still active.",
+				nil,
+			)
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
 		return
 	}
 
 	// Check if expired
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(time.Now()) {
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusGone,
+				code,
+				"QR code unavailable",
+				"This link has expired, so its QR code is no longer active.",
+				"Time-limited links stop accepting visits and QR scans after expiration.",
+				link,
+			)
+			return
+		}
 		c.JSON(http.StatusGone, gin.H{"error": "Link has expired"})
 		return
 	}
@@ -54,6 +79,18 @@ func QRCodeHandler(c *gin.Context) {
 	qr, err := qrcode.Encode(shortURL, qrcode.Medium, 256)
 	if err != nil {
 		logger.Logger.Error("Failed to generate QR code", zap.Error(err), zap.String("code", code))
+		if htmlRequest {
+			renderUnavailablePage(
+				c,
+				http.StatusInternalServerError,
+				code,
+				"QR code unavailable",
+				"We could not generate the QR code for this link right now.",
+				"Please try again in a moment.",
+				link,
+			)
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate QR code"})
 		return
 	}

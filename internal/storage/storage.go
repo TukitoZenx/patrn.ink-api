@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/go-redis/redis/v8"
@@ -300,6 +301,34 @@ func SaveLink(link *models.Link) error {
 		item["AgeVerification"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", link.AgeVerification)}
 	}
 
+	if len(link.RotationTargets) > 0 {
+		rotationTargets, err := attributevalue.MarshalList(link.RotationTargets)
+		if err != nil {
+			return fmt.Errorf("failed to marshal rotation targets: %w", err)
+		}
+		item["RotationTargets"] = &types.AttributeValueMemberL{Value: rotationTargets}
+	}
+
+	if link.RotationCursor > 0 {
+		item["RotationCursor"] = &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", link.RotationCursor)}
+	}
+
+	if link.PrimaryHealth.Status != "" {
+		primaryHealth, err := attributevalue.MarshalMap(link.PrimaryHealth)
+		if err != nil {
+			return fmt.Errorf("failed to marshal primary health: %w", err)
+		}
+		item["PrimaryHealth"] = &types.AttributeValueMemberM{Value: primaryHealth}
+	}
+
+	if link.HealthStatus.Status != "" {
+		healthStatus, err := attributevalue.MarshalMap(link.HealthStatus)
+		if err != nil {
+			return fmt.Errorf("failed to marshal health status: %w", err)
+		}
+		item["HealthStatus"] = &types.AttributeValueMemberM{Value: healthStatus}
+	}
+
 	_, err := ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String("Links"),
 		Item:      item,
@@ -384,6 +413,31 @@ func GetLink(shortCode string) (*models.Link, error) {
 		var ageVal int
 		fmt.Sscanf(ageVerifyAttr.(*types.AttributeValueMemberN).Value, "%d", &ageVal)
 		link.AgeVerification = models.AgeVerification(ageVal)
+	}
+
+	if rotationTargetsAttr, ok := result.Item["RotationTargets"]; ok {
+		var rotationTargets []models.RotationTarget
+		if err := attributevalue.Unmarshal(rotationTargetsAttr, &rotationTargets); err == nil {
+			link.RotationTargets = rotationTargets
+		}
+	}
+
+	if rotationCursorAttr, ok := result.Item["RotationCursor"]; ok {
+		fmt.Sscanf(rotationCursorAttr.(*types.AttributeValueMemberN).Value, "%d", &link.RotationCursor)
+	}
+
+	if primaryHealthAttr, ok := result.Item["PrimaryHealth"]; ok {
+		var primaryHealth models.DestinationCheck
+		if err := attributevalue.Unmarshal(primaryHealthAttr, &primaryHealth); err == nil {
+			link.PrimaryHealth = primaryHealth
+		}
+	}
+
+	if healthStatusAttr, ok := result.Item["HealthStatus"]; ok {
+		var healthStatus models.LinkHealthStatus
+		if err := attributevalue.Unmarshal(healthStatusAttr, &healthStatus); err == nil {
+			link.HealthStatus = healthStatus
+		}
 	}
 
 	return link, nil
@@ -584,6 +638,37 @@ func parseLinkFromItem(item map[string]types.AttributeValue) *models.Link {
 		link.Description = descAttr.(*types.AttributeValueMemberS).Value
 	}
 
+	if ageVerifyAttr, ok := item["AgeVerification"]; ok {
+		var ageVal int
+		fmt.Sscanf(ageVerifyAttr.(*types.AttributeValueMemberN).Value, "%d", &ageVal)
+		link.AgeVerification = models.AgeVerification(ageVal)
+	}
+
+	if rotationTargetsAttr, ok := item["RotationTargets"]; ok {
+		var rotationTargets []models.RotationTarget
+		if err := attributevalue.Unmarshal(rotationTargetsAttr, &rotationTargets); err == nil {
+			link.RotationTargets = rotationTargets
+		}
+	}
+
+	if rotationCursorAttr, ok := item["RotationCursor"]; ok {
+		fmt.Sscanf(rotationCursorAttr.(*types.AttributeValueMemberN).Value, "%d", &link.RotationCursor)
+	}
+
+	if primaryHealthAttr, ok := item["PrimaryHealth"]; ok {
+		var primaryHealth models.DestinationCheck
+		if err := attributevalue.Unmarshal(primaryHealthAttr, &primaryHealth); err == nil {
+			link.PrimaryHealth = primaryHealth
+		}
+	}
+
+	if healthStatusAttr, ok := item["HealthStatus"]; ok {
+		var healthStatus models.LinkHealthStatus
+		if err := attributevalue.Unmarshal(healthStatusAttr, &healthStatus); err == nil {
+			link.HealthStatus = healthStatus
+		}
+	}
+
 	return link
 }
 
@@ -648,6 +733,22 @@ func ArchiveLink(shortCode string, userID string) error {
 	}
 
 	return nil
+}
+
+// UpdateLinkRotationCursor advances the rotation cursor for a link.
+func UpdateLinkRotationCursor(shortCode string, cursor int) error {
+	_, err := ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String("Links"),
+		Key: map[string]types.AttributeValue{
+			"ShortCode": &types.AttributeValueMemberS{Value: shortCode},
+		},
+		UpdateExpression: aws.String("SET RotationCursor = :cursor"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":cursor": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", cursor)},
+		},
+	})
+
+	return err
 }
 
 // DeleteFromCache removes a URL from Redis cache
