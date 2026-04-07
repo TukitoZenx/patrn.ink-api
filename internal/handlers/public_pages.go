@@ -412,6 +412,35 @@ func isHTMLFormPost(c *gin.Context) bool {
 			strings.Contains(contentType, "multipart/form-data"))
 }
 
+func forwardedHeaderValue(value string) string {
+	if value == "" {
+		return ""
+	}
+	parts := strings.Split(value, ",")
+	return strings.TrimSpace(parts[0])
+}
+
+func requestOrigin(c *gin.Context) string {
+	proto := forwardedHeaderValue(c.GetHeader("X-Forwarded-Proto"))
+	if proto == "" {
+		if c.Request.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+
+	host := forwardedHeaderValue(c.GetHeader("X-Forwarded-Host"))
+	if host == "" {
+		host = c.Request.Host
+	}
+	if host == "" {
+		return config.AppConfig.BaseURL
+	}
+
+	return proto + "://" + host
+}
+
 func renderPublicPage(c *gin.Context, status int, data publicPageData) {
 	if data.SecondaryURL == "" {
 		data.SecondaryURL = config.AppConfig.FrontendURL
@@ -419,11 +448,12 @@ func renderPublicPage(c *gin.Context, status int, data publicPageData) {
 	if data.SecondaryLabel == "" {
 		data.SecondaryLabel = "Back to patrn.ink"
 	}
+	origin := requestOrigin(c)
 	if data.BrandImageURL == "" {
-		data.BrandImageURL = config.AppConfig.BaseURL + "/brand/patrn.ink-transparent_512.png"
+		data.BrandImageURL = origin + "/brand/patrn.ink-transparent_512.png"
 	}
 	if data.FaviconURL == "" {
-		data.FaviconURL = config.AppConfig.BaseURL + "/brand/favicon.ico"
+		data.FaviconURL = origin + "/brand/favicon.ico"
 	}
 
 	var buf bytes.Buffer
@@ -448,13 +478,14 @@ func renderUnavailablePage(c *gin.Context, status int, code, heading, body, deta
 }
 
 func renderPasswordGate(c *gin.Context, code string, link *models.Link, errorMessage string, status int) {
+	publicBaseURL := requestOrigin(c)
 	renderPublicPage(c, status, buildPublicPageData(code, link, publicPageData{
 		PageTitle:        "Password required · patrn.ink",
 		Eyebrow:          "Protected link",
 		Heading:          "This link is password protected",
 		Body:             "Enter the password to continue to the destination. This extra step helps keep access controlled without changing the shareable link.",
 		Detail:           "If someone shared this link with you, ask them for the password.",
-		ActionURL:        config.AppConfig.BaseURL + "/" + code + "/verify",
+		ActionURL:        publicBaseURL + "/" + code + "/verify",
 		ActionLabel:      "Unlock and continue",
 		ShowPasswordForm: true,
 		PasswordError:    errorMessage,
@@ -462,13 +493,14 @@ func renderPasswordGate(c *gin.Context, code string, link *models.Link, errorMes
 }
 
 func renderAgeGate(c *gin.Context, code string, link *models.Link, ageLabel, errorMessage string, status int) {
+	publicBaseURL := requestOrigin(c)
 	renderPublicPage(c, status, buildPublicPageData(code, link, publicPageData{
 		PageTitle:      "Age confirmation required · patrn.ink",
 		Eyebrow:        "Age-gated link",
 		Heading:        "Age confirmation required",
 		Body:           "This destination is restricted content. Confirm that you are " + ageLabel + " or older before continuing.",
 		Detail:         "Only continue if you meet the stated age requirement for this destination.",
-		ActionURL:      config.AppConfig.BaseURL + "/" + code + "/verify-age",
+		ActionURL:      publicBaseURL + "/" + code + "/verify-age",
 		ActionLabel:    "I confirm I am " + ageLabel + " or older",
 		ShowAgeForm:    true,
 		AgeLabel:       ageLabel,

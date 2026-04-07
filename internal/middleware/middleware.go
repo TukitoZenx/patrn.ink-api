@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -92,7 +94,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		// Check if origin is allowed
 		allowed := false
 		for _, allowedOrigin := range config.AppConfig.AllowedOrigins {
-			if origin == allowedOrigin || allowedOrigin == "*" {
+			if originMatches(origin, allowedOrigin) {
 				allowed = true
 				break
 			}
@@ -101,7 +103,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		if allowed {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 
@@ -111,5 +113,51 @@ func CORSMiddleware() gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+func originMatches(origin, allowedOrigin string) bool {
+	if origin == allowedOrigin || allowedOrigin == "*" {
+		return true
+	}
+
+	requestURL, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil {
+		return false
+	}
+
+	allowedURL, err := url.Parse(strings.TrimSpace(allowedOrigin))
+	if err != nil {
+		return false
+	}
+
+	if !strings.EqualFold(requestURL.Scheme, allowedURL.Scheme) {
+		return false
+	}
+
+	if normalizeOriginHost(requestURL.Hostname()) != normalizeOriginHost(allowedURL.Hostname()) {
+		return false
+	}
+
+	return normalizedOriginPort(requestURL) == normalizedOriginPort(allowedURL)
+}
+
+func normalizeOriginHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return strings.TrimPrefix(host, "www.")
+}
+
+func normalizedOriginPort(parsed *url.URL) string {
+	if parsed.Port() != "" {
+		return parsed.Port()
+	}
+
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
 	}
 }

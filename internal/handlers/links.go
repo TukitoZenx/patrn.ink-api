@@ -187,6 +187,7 @@ func ShortenHandler(c *gin.Context) {
 func RedirectHandler(c *gin.Context) {
 	code := c.Param("code")
 	htmlRequest := prefersHTML(c)
+	publicBaseURL := requestOrigin(c)
 
 	// Fallback to database
 	link, err := storage.GetLink(code)
@@ -294,7 +295,7 @@ func RedirectHandler(c *gin.Context) {
 				Heading:      "Confirm your age before continuing",
 				Body:         ageBody,
 				Detail:       "Required age: " + ageLabel,
-				ActionURL:    config.AppConfig.BaseURL + "/" + code + "/verify-age",
+				ActionURL:    publicBaseURL + "/" + code + "/verify-age",
 				ActionLabel:  "I confirm I am " + ageLabel + " or older",
 				ShowAgeForm:  true,
 				AgeLabel:     ageLabel,
@@ -307,7 +308,7 @@ func RedirectHandler(c *gin.Context) {
 			"error":         "Age verification required",
 			"age_required":  ageLabel,
 			"age_level":     int(link.AgeVerification),
-			"verify_url":    config.AppConfig.BaseURL + "/" + code + "/verify-age",
+			"verify_url":    publicBaseURL + "/" + code + "/verify-age",
 			"title":         link.Title,
 			"description":   link.Description,
 			"gate_sequence": []string{"age"},
@@ -329,7 +330,7 @@ func RedirectHandler(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":             "Password required",
 			"password_required": true,
-			"verify_url":        config.AppConfig.BaseURL + "/" + code + "/verify",
+			"verify_url":        publicBaseURL + "/" + code + "/verify",
 		})
 		return
 	}
@@ -362,6 +363,7 @@ func RedirectHandler(c *gin.Context) {
 func VerifyPasswordHandler(c *gin.Context) {
 	code := c.Param("code")
 	htmlRequest := prefersHTML(c) || isHTMLFormPost(c)
+	publicBaseURL := requestOrigin(c)
 
 	var req models.PasswordVerifyRequest
 	if isHTMLFormPost(c) {
@@ -421,7 +423,7 @@ func VerifyPasswordHandler(c *gin.Context) {
 				Heading:      "Confirm your age before entering the password",
 				Body:         "This destination requires age confirmation before the password step can unlock it.",
 				Detail:       "Required age: " + ageLabel,
-				ActionURL:    config.AppConfig.BaseURL + "/" + code + "/verify-age",
+				ActionURL:    publicBaseURL + "/" + code + "/verify-age",
 				ActionLabel:  "I confirm I am " + ageLabel + " or older",
 				ShowAgeForm:  true,
 				AgeLabel:     ageLabel,
@@ -435,7 +437,7 @@ func VerifyPasswordHandler(c *gin.Context) {
 			"password_required": true,
 			"age_required":      ageLabel,
 			"age_level":         int(link.AgeVerification),
-			"verify_url":        config.AppConfig.BaseURL + "/" + code + "/verify-age",
+			"verify_url":        publicBaseURL + "/" + code + "/verify-age",
 			"gate_sequence":     []string{"age", "password"},
 			"title":             link.Title,
 			"description":       link.Description,
@@ -483,6 +485,7 @@ func VerifyPasswordHandler(c *gin.Context) {
 func VerifyAgeHandler(c *gin.Context) {
 	code := c.Param("code")
 	htmlRequest := prefersHTML(c) || isHTMLFormPost(c)
+	publicBaseURL := requestOrigin(c)
 
 	var req struct {
 		Confirmed bool `json:"confirmed" binding:"required"`
@@ -558,7 +561,7 @@ func VerifyAgeHandler(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":             "Password required",
 			"password_required": true,
-			"verify_url":        config.AppConfig.BaseURL + "/" + code + "/verify",
+			"verify_url":        publicBaseURL + "/" + code + "/verify",
 			"title":             link.Title,
 			"description":       link.Description,
 		})
