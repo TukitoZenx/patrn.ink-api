@@ -19,6 +19,7 @@ go.work
 .env
 .env.local
 .env.production
+deploy/.env
 
 # IDE specific files
 .vscode/

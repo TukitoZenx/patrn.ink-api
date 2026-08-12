@@ -1,0 +1,143 @@
+name: API CD
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to EC2 with SSM after pushing the image
+        type: boolean
+        default: true
+
+concurrency:
+  group: patrn-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    name: Test and vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  build-and-deploy:
+    name: Build, push, deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: meta
+        run: |
+          echo "IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ vars.ECR_API_REPOSITORY }}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          echo "REF_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.IMAGE_URI }}:${{ steps.meta.outputs.IMAGE_TAG }}
+            ${{ steps.meta.outputs.IMAGE_URI }}:${{ steps.meta.outputs.REF_TAG }}
+
+      - name: Deploy via SSM
+        if: github.event_name != 'workflow_dispatch' || inputs.deploy == true
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          IMAGE_TAG: ${{ steps.meta.outputs.IMAGE_TAG }}
+        run: |
+          set -euo pipefail
+          if [ -z "${INSTANCE_ID}" ]; then
+            echo "Repository variable EC2_INSTANCE_ID is not set" >&2
+            exit 1
+          fi
+
+          INPUT="$(mktemp)"
+          cat > "${INPUT}" <<EOF
+          {
+            "InstanceIds": ["${INSTANCE_ID}"],
+            "DocumentName": "AWS-RunShellScript",
+            "TimeoutSeconds": 600,
+            "Comment": "Deploy patrn.ink-api ${IMAGE_TAG}",
+            "Parameters": {
+              "commands": [
+                "set -euo pipefail",
+                "export API_IMAGE_TAG=${IMAGE_TAG}",
+                "cd /opt/patrn.ink",
+                "./scripts/deploy.sh"
+              ]
+            }
+          }
+          EOF
+
+          COMMAND_ID="$(aws ssm send-command \
+            --cli-input-json "file://${INPUT}" \
+            --query Command.CommandId \
+            --output text)"
+
+          echo "SSM command ${COMMAND_ID}"
+
+          STATUS="Pending"
+          for _ in $(seq 1 60); do
+            STATUS="$(aws ssm get-command-invocation \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${INSTANCE_ID}" \
+              --query Status \
+              --output text 2>/dev/null || echo Pending)"
+            echo "SSM status: ${STATUS}"
+            case "${STATUS}" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          echo "----- SSM stdout -----"
+          aws ssm get-command-invocation \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query StandardOutputContent \
+            --output text || true
+          echo "----- SSM stderr -----"
+          aws ssm get-command-invocation \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query StandardErrorContent \
+            --output text || true
+
+          if [ "${STATUS}" != "Success" ]; then
+            echo "SSM deploy failed with status ${STATUS}" >&2
+            exit 1
+          fi

@@ -30,5 +30,9 @@ COPY --from=builder /app/static ./static
 # Expose port
 EXPOSE 8080
 
+# wget is already installed above. 503 from /health marks the container unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1
+
 # Run the application
 CMD ["./main"]

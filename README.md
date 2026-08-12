@@ -25,20 +25,13 @@ A feature-rich URL shortener built with Go, featuring OAuth 2.0 (Google & GitHub
 ## 🏗️ Architecture
 
 ```mermaid
-graph TD
-    A[Client] -->|1. Login| B[Google OAuth]
-    B -->|2. JWT Token| A
-    A -->|3. Create Short URL| C[API Gateway]
-    C -->|4. Validate JWT| D[Auth Middleware]
-    D -->|5. Rate Limit| E[Rate Limiter]
-    E -->|6. Generate Code| F[Logic Layer]
-    F -->|7. Cache| G[Redis]
-    F -->|8. Store| H[DynamoDB]
-    A -->|9. Access /:code| I[Redirect Handler]
-    I -->|10. Check Cache| G
-    I -->|11. Record Analytics| J[Analytics]
-    J --> H
-    I -->|12. Redirect| A
+flowchart TD
+    Browser -->|dashboard| UI[patrn.ink Next.js]
+    Browser -->|OAuth and /api and /code| API[api.patrn.ink Go/Gin]
+    UI -->|Bearer JWT CORS| API
+    API --> Redis
+    API --> DynamoDB
+    API --> OAuth[Google / GitHub]
 ```
 
 ## 🚀 Quick Start
@@ -269,19 +262,18 @@ All configuration via environment variables (see `.env.example`):
 
 ## 🏭 Production Deployment
 
-### AWS Setup
+Production is a single EC2 host running Docker Compose + Nginx.
 
-1. **DynamoDB**: Remove `DYNAMODB_ENDPOINT` to use production AWS DynamoDB
-2. **Redis**: Use AWS ElastiCache or Redis Cloud
-3. **Update OAuth**: Add production redirect URI to Google Console
-4. **SSL**: Use HTTPS with valid certificate
-5. **Environment**: Set `ENVIRONMENT=production`
+- `https://patrn.ink` → Next.js UI
+- `https://api.patrn.ink` → this API, including `/{code}` redirects and OAuth callbacks
 
-### Build for Production
+Local `docker-compose.yml` is unchanged (DynamoDB Local). Production Compose lives in `deploy/docker-compose.prod.yml` and must not be used as a replacement for local development.
+
+Full runbook: **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)**
 
 ```bash
-# Build Docker image
-docker build -t patrnink-api:latest .
+# Production image (CI does this with a version/SHA tag)
+docker build -t patrn-ink-api:local .
 ```
 
 ## 🛠️ Technology Stack
@@ -327,7 +319,8 @@ patrn.ink-api/
 │   └── storage/
 │       └── storage.go       # DynamoDB & Redis layer
 ├── docs/                    # Swagger documentation
-├── docker-compose.yml       # Local development
+├── deploy/                  # Production Compose, Nginx, IAM, SSM scripts
+├── docker-compose.yml       # Local development only
 ├── Dockerfile               # Container image
 └── README.md
 ```

@@ -1,0 +1,11 @@
+.git
+.github
+.env
+.env.*
+*.md
+deploy
+docker/dynamodb
+tmp
+*.log
+.idea
+.vscode

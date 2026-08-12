@@ -1,0 +1,50 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DynamoDBAppTables",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:ListTables",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:AWS_REGION:AWS_ACCOUNT_ID:table/Users",
+        "arn:aws:dynamodb:AWS_REGION:AWS_ACCOUNT_ID:table/Links",
+        "arn:aws:dynamodb:AWS_REGION:AWS_ACCOUNT_ID:table/Analytics",
+        "arn:aws:dynamodb:AWS_REGION:AWS_ACCOUNT_ID:table/APITokens"
+      ]
+    },
+    {
+      "Sid": "ECRPull",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ECRPullImages",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": [
+        "arn:aws:ecr:AWS_REGION:AWS_ACCOUNT_ID:repository/patrn-ink-api",
+        "arn:aws:ecr:AWS_REGION:AWS_ACCOUNT_ID:repository/patrn-ink-ui"
+      ]
+    }
+  ]
+}
