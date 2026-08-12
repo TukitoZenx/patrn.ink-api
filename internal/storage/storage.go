@@ -32,6 +32,7 @@ var ctx = context.Background()
 func InitRedis() error {
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     config.AppConfig.RedisAddr,
+		Username: config.AppConfig.RedisUsername,
 		Password: config.AppConfig.RedisPassword,
 		DB:       0,
 	})

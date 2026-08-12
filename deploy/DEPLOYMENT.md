@@ -25,7 +25,8 @@ AWS accounts and TLS certificates are created in **your** AWS account. DNS for `
                                     |
                              +------+------+
                              |             |
-                           Redis       DynamoDB
+                      Redis Cloud     Amazon DynamoDB
+                       (redis.io)         (AWS)
 ```
 
 ```mermaid
@@ -37,8 +38,8 @@ flowchart TD
     EC2 -->|Host api.patrn.ink| API[Go/Gin :8080]
     UI -->|HTTPS CORS JWT| API
     Users -->|OAuth start and short links| API
-    API --> Redis[(Redis container)]
-    API --> DDB[(AWS DynamoDB)]
+    API --> Redis[Redis Cloud]
+    API --> DDB[(Amazon DynamoDB)]
     GHA[GitHub Actions] -->|OIDC| IAM[IAM deploy role]
     IAM --> ECR[ECR]
     IAM -->|SSM Run Command| EC2
@@ -87,10 +88,11 @@ Compose hard-wires the public contract:
 - `GOOGLE_REDIRECT_URL=https://api.patrn.ink/auth/google/callback`
 - `GITHUB_REDIRECT_URL=https://api.patrn.ink/auth/github/callback`
 
-You supply secrets only: JWT, Redis password, OAuth client IDs/secrets, image tags, ECR registry.
+You supply secrets only: JWT, Redis Cloud password, OAuth client IDs/secrets, image tags, ECR registry.
 
-- Do **not** set `DYNAMODB_ENDPOINT`.
+- Do **not** set `DYNAMODB_ENDPOINT`. Production uses Amazon DynamoDB.
 - Do **not** put AWS access keys on the instance. DynamoDB and ECR use the EC2 instance role.
+- Redis Cloud password lives only in `/opt/patrn.ink/.env`. It is never committed.
 
 UI production values are **build-args**, not runtime env:
 
@@ -103,16 +105,22 @@ The UI CD workflow passes those arguments. Local Dockerfile defaults remain loca
 
 ## Docker
 
-`docker-compose.prod.yml` runs four services:
+`docker-compose.prod.yml` runs three services on EC2:
 
 | Service | Image | Published ports |
 | --- | --- | --- |
 | `nginx` | `nginx:1.27-alpine` | 80, 443 |
 | `api` | ECR `patrn-ink-api:<tag>` | none |
 | `ui` | ECR `patrn-ink-ui:<tag>` | none |
-| `redis` | `redis:7-alpine` | none |
 
-Logs rotate (`json-file`, 10m × 3 files). Redis requires a password and is only on the Docker network.
+Managed outside the box:
+
+| Service | Where |
+| --- | --- |
+| Redis | Redis Cloud (`redis.io`) |
+| DynamoDB | Amazon DynamoDB in `us-east-1` |
+
+Logs rotate (`json-file`, 10m × 3 files). Production does **not** run Redis or DynamoDB Local on EC2.
 
 API and UI images include Docker `HEALTHCHECK`s. API uses `GET /health` (200 healthy, 503 degraded).
 
@@ -257,17 +265,8 @@ CI/CD does **not** use SSH and does **not** use `AWS_ACCESS_KEY_ID` / `AWS_SECRE
 
 ```bash
 curl -sS https://api.patrn.ink/health
-# 200 + "healthy" when Redis and DynamoDB respond
+# 200 + "healthy" when Redis Cloud and DynamoDB respond
 # 503 + "degraded" when a dependency is down
-```
-
-Demo:
-
-```bash
-docker stop patrn-redis
-curl -sS -o /dev/stderr -w '%{http_code}\n' https://api.patrn.ink/health
-docker start patrn-redis
-curl -sS https://api.patrn.ink/health
 ```
 
 ## Logging
@@ -306,6 +305,7 @@ That writes the tag into `.env`, pulls the older image, and runs the same health
 | --- | --- |
 | API exits on boot, JWT error | `JWT_SECRET` still `dev-secret-key` or empty |
 | API cannot reach DynamoDB from Docker | IMDS hop limit is 1; set it to 2. Or instance role missing table permissions |
+| API `/health` shows redis false | Wrong `REDIS_ADDR` / username / Redis Cloud password in `/opt/patrn.ink/.env` |
 | UI calls `localhost:8080` in production | UI image was built without production Docker build-args |
 | OAuth works locally, fails in prod | Callback URLs not added in Google/GitHub consoles |
 | Certbot fails | DNS not pointing at this EIP yet, or port 80 blocked |
@@ -315,4 +315,4 @@ That writes the tag into `.env`, pulls the older image, and runs the same health
 
 ## What this folder is not
 
-It is not Terraform. It is not ECS/EKS. It is not the local Compose file. DynamoDB Local is not used here.
+It is not Terraform. It is not ECS/EKS. It is not the local Compose file. Production does not run Redis or DynamoDB Local on EC2.

@@ -2,21 +2,24 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "DynamoDBListAndCreate",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:ListTables",
+        "dynamodb:CreateTable"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "DynamoDBAppTables",
       "Effect": "Allow",
       "Action": [
-        "dynamodb:CreateTable",
         "dynamodb:DescribeTable",
-        "dynamodb:DescribeTimeToLive",
-        "dynamodb:ListTables",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
         "dynamodb:UpdateItem",
-        "dynamodb:DeleteItem",
         "dynamodb:Query",
-        "dynamodb:Scan",
-        "dynamodb:BatchGetItem",
-        "dynamodb:BatchWriteItem"
+        "dynamodb:Scan"
       ],
       "Resource": [
         "arn:aws:dynamodb:AWS_REGION:AWS_ACCOUNT_ID:table/Users",

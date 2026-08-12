@@ -7,7 +7,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 fail=0
 
-for name in patrn-redis patrn-api patrn-ui patrn-nginx; do
+for name in patrn-api patrn-ui patrn-nginx; do
   if ! docker inspect --format '{{.State.Running}}' "${name}" 2>/dev/null | grep -q true; then
     echo "FAIL  ${name} is not running"
     fail=1

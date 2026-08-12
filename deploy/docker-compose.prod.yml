@@ -7,31 +7,6 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: patrn-redis
-    restart: unless-stopped
-    command:
-      [
-        "redis-server",
-        "--appendonly",
-        "yes",
-        "--requirepass",
-        "${REDIS_PASSWORD}",
-      ]
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-    volumes:
-      - redis-data:/data
-    networks:
-      - patrn
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
   api:
     image: ${ECR_REGISTRY}/${ECR_API_REPOSITORY}:${API_IMAGE_TAG}
     container_name: patrn-api
@@ -51,13 +26,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-168}
       AWS_REGION: ${AWS_REGION}
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: ${REDIS_ADDR}
+      REDIS_USERNAME: ${REDIS_USERNAME}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       DEFAULT_RATE_LIMIT: ${DEFAULT_RATE_LIMIT:-60}
       API_TOKEN_RATE_LIMIT: ${API_TOKEN_RATE_LIMIT:-100}
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - patrn
     logging: *default-logging
@@ -95,7 +68,6 @@ services:
     logging: *default-logging
 
 volumes:
-  redis-data:
   certbot-www:
   certbot-etc:
 

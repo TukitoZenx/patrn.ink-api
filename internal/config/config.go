@@ -35,6 +35,7 @@ type Config struct {
 
 	// Redis (for caching)
 	RedisAddr     string
+	RedisUsername string
 	RedisPassword string
 
 	// CORS
@@ -86,6 +87,7 @@ func LoadConfig() error {
 		DynamoDBEndpoint: getEnv("DYNAMODB_ENDPOINT", ""),
 
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisUsername: getEnv("REDIS_USERNAME", "default"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		AllowedOrigins: strings.Split(getEnv("ALLOWED_ORIGINS", "http://localhost:3000"), ","),

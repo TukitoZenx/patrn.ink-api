@@ -255,8 +255,10 @@ All configuration via environment variables (see `.env.example`):
 | `GITHUB_CLIENT_ID`     | GitHub OAuth ID       | Optional                |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth secret   | Optional                |
 | `JWT_SECRET`           | JWT signing key       | `dev-secret-key`        |
-| `DYNAMODB_ENDPOINT`    | Local DynamoDB        | `http://dynamodb:8000`  |
-| `REDIS_ADDR`           | Redis address         | `redis:6379`            |
+| `DYNAMODB_ENDPOINT`    | Local DynamoDB only   | empty in production     |
+| `REDIS_ADDR`           | Redis host:port       | `localhost:6379`        |
+| `REDIS_USERNAME`       | Redis username        | `default`               |
+| `REDIS_PASSWORD`       | Redis password        | empty locally           |
 | `FRONTEND_URL`         | Frontend callback URL | `http://localhost:3000` |
 | `BASE_URL`             | API base URL          | `http://localhost:8080` |
 
@@ -266,8 +268,10 @@ Production is a single EC2 host running Docker Compose + Nginx.
 
 - `https://patrn.ink` → Next.js UI
 - `https://api.patrn.ink` → this API, including `/{code}` redirects and OAuth callbacks
+- Redis: **Redis Cloud** (not a container on EC2)
+- Database: **Amazon DynamoDB** via the EC2 IAM role (not DynamoDB Local)
 
-Local `docker-compose.yml` is unchanged (DynamoDB Local). Production Compose lives in `deploy/docker-compose.prod.yml` and must not be used as a replacement for local development.
+Local `docker-compose.yml` is unchanged (DynamoDB Local + Redis). Production Compose lives in `deploy/docker-compose.prod.yml` and must not be used as a replacement for local development.
 
 Full runbook: **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)**
 
@@ -281,8 +285,8 @@ docker build -t patrn-ink-api:local .
 - **Language**: Go 1.24
 - **Framework**: Gin
 - **Authentication**: Google & GitHub OAuth 2.0 + JWT + API Tokens
-- **Database**: DynamoDB (NoSQL)
-- **Cache**: Redis
+- **Database**: Amazon DynamoDB (DynamoDB Local only for development)
+- **Cache**: Redis Cloud in production; Redis container locally
 - **Logging**: Zap (structured JSON)
 - **Documentation**: Swagger (swaggo/swag)
 - **Containerization**: Docker
