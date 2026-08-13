@@ -94,7 +94,6 @@ jobs:
             "Comment": "Deploy patrn.ink-api ${IMAGE_TAG}",
             "Parameters": {
               "commands": [
-                "set -euo pipefail",
                 "export API_IMAGE_TAG=${IMAGE_TAG}",
                 "cd /opt/patrn.ink",
                 "./scripts/deploy.sh"
