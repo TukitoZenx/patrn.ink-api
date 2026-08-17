@@ -44,6 +44,9 @@ logs/
 # Dependencies
 vendor/
 
+# Session working memory (Knowledge Architecture)
+PLAN.md
+
 # Air (hot reload)
 tmp/
 
