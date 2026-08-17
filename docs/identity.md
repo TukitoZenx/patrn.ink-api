@@ -30,4 +30,4 @@ A stranger can run locally with Compose, and the live site at `patrn.ink` / `api
 
 ## Ownership
 
-Single-author portfolio project. Public GitHub: `TukitoZenx/patrn.ink-api` and `TukitoZenx/patrn.ink-ui`.
+Portfolio project by TukitoZenx with contributions from AndysTMC. Public GitHub: `TukitoZenx/patrn.ink-api` and `TukitoZenx/patrn.ink-ui`.

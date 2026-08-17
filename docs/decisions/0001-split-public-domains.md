@@ -6,7 +6,7 @@ type: decision
 
 Status: accepted
 Date: 2026-08-13
-Deciders: TukitoZenx
+Deciders: TukitoZenx, AndysTMC
 Supersedes: —
 Superseded-by: —
 
