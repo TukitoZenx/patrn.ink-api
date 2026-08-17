@@ -928,40 +928,46 @@ func GetUserAPITokens(userID string) ([]*models.APIToken, error) {
 
 // GetAPITokenByHash retrieves an API token by its hash
 func GetAPITokenByHash(tokenHash string) (*models.APIToken, error) {
+	var token *models.APIToken
+
 	// Try to get token ID from Redis cache
 	tokenID, err := rdb.Get(ctx, "token:"+tokenHash).Result()
 	if err == nil && tokenID != "" {
-		return GetAPITokenByID(tokenID)
+		token, err = GetAPITokenByID(tokenID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Fall back to scanning (not ideal, but works)
+		result, err := ddb.Scan(ctx, &dynamodb.ScanInput{
+			TableName:        aws.String("APITokens"),
+			FilterExpression: aws.String("TokenHash = :hash AND IsActive = :active"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":hash":   &types.AttributeValueMemberS{Value: tokenHash},
+				":active": &types.AttributeValueMemberBOOL{Value: true},
+			},
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get API token: %w", err)
+		}
+
+		if len(result.Items) == 0 {
+			return nil, fmt.Errorf("token not found")
+		}
+
+		token = parseAPITokenFromItem(result.Items[0])
 	}
 
-	// Fall back to scanning (not ideal, but works)
-	result, err := ddb.Scan(ctx, &dynamodb.ScanInput{
-		TableName:        aws.String("APITokens"),
-		FilterExpression: aws.String("TokenHash = :hash AND IsActive = :active"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":hash":   &types.AttributeValueMemberS{Value: tokenHash},
-			":active": &types.AttributeValueMemberBOOL{Value: true},
-		},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get API token: %w", err)
+	if !token.IsActive {
+		return nil, fmt.Errorf("token revoked")
 	}
 
-	if len(result.Items) == 0 {
-		return nil, fmt.Errorf("token not found")
-	}
-
-	token := parseAPITokenFromItem(result.Items[0])
-
-	// Check if expired
 	if token.ExpiresAt != nil && token.ExpiresAt.Before(time.Now()) {
 		return nil, fmt.Errorf("token expired")
 	}
 
-	// Update last used time
 	go updateTokenLastUsed(token.ID)
-
 	return token, nil
 }
 

@@ -13,16 +13,27 @@ import (
 	"patrn.ink/internal/storage"
 )
 
+func credentialFromRequest(c *gin.Context) string {
+	if key := strings.TrimSpace(c.GetHeader("X-API-Key")); key != "" {
+		return key
+	}
+
+	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+	if authHeader == "" {
+		return ""
+	}
+
+	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+}
+
 // AuthMiddleware validates JWT token or API token
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Authorization header required"})
+		tokenString := credentialFromRequest(c)
+		if tokenString == "" {
+			c.AbortWithStatusJSON(401, gin.H{"error": "Authorization header or X-API-Key required"})
 			return
 		}
-
-		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
 
 		// Check if it's an API token (starts with ptk_)
 		if strings.HasPrefix(tokenString, "ptk_") {
@@ -50,15 +61,22 @@ func handleJWTAuth(c *gin.Context, tokenString string) {
 		return
 	}
 
-	// Extract claims
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		c.Set("user_id", claims["user_id"].(string))
-		c.Set("email", claims["email"].(string))
-		c.Set("auth_type", "jwt")
-	} else {
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
 		c.AbortWithStatusJSON(401, gin.H{"error": "Invalid token claims"})
 		return
 	}
+
+	userID, _ := claims["user_id"].(string)
+	email, _ := claims["email"].(string)
+	if userID == "" {
+		c.AbortWithStatusJSON(401, gin.H{"error": "Invalid token claims"})
+		return
+	}
+
+	c.Set("user_id", userID)
+	c.Set("email", email)
+	c.Set("auth_type", "jwt")
 
 	c.Next()
 }

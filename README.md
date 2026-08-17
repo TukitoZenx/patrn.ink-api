@@ -63,7 +63,7 @@ curl -L http://localhost:8080/my-link
 curl -X POST http://localhost:8080/api/tokens -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"cli","scopes":["links:read","links:write"]}'
-curl http://localhost:8080/api/links -H "X-API-Key: pat_…"
+curl http://localhost:8080/api/links -H "X-API-Key: ptk_…"
 ```
 
 ## 🧪 Testing

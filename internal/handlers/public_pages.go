@@ -545,6 +545,7 @@ func issueAgeProof(c *gin.Context, code string, level models.AgeVerification) {
 		Path:     "/",
 		MaxAge:   int(ageProofTTL.Seconds()),
 		HttpOnly: true,
+		Secure:   config.AppConfig.Environment == "production",
 		SameSite: http.SameSiteLaxMode,
 	})
 }

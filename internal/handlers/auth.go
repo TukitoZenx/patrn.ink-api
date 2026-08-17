@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,7 +64,7 @@ func GoogleLoginHandler(c *gin.Context) {
 	state := generateStateToken()
 
 	// Store state in session (using cookie for simplicity)
-	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+	setOAuthStateCookie(c, state)
 
 	url := googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	c.Redirect(http.StatusTemporaryRedirect, url)
@@ -149,7 +151,7 @@ func GitHubLoginHandler(c *gin.Context) {
 	state := generateStateToken()
 
 	// Store state in session (using cookie for simplicity)
-	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+	setOAuthStateCookie(c, state)
 
 	url := githubOAuthConfig.AuthCodeURL(state)
 	c.Redirect(http.StatusTemporaryRedirect, url)
@@ -306,15 +308,26 @@ func getGitHubPrimaryEmail(accessToken string) (string, error) {
 	return "", nil
 }
 
-// formatGitHubID formats the GitHub ID (can be float64 from JSON)
+func setOAuthStateCookie(c *gin.Context, state string) {
+	secure := config.AppConfig.Environment == "production"
+	c.SetCookie("oauth_state", state, 300, "/", "", secure, true)
+}
+
+// formatGitHubID formats the GitHub ID (JSON numbers decode as float64)
 func formatGitHubID(id interface{}) string {
 	switch v := id.(type) {
 	case float64:
-		return string(rune(int(v)))
+		return strconv.FormatInt(int64(v), 10)
+	case json.Number:
+		return v.String()
 	case string:
 		return v
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
 	default:
-		return ""
+		return fmt.Sprint(v)
 	}
 }
 
